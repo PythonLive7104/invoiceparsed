@@ -7,15 +7,31 @@
 # reverse-proxies /api to the API. Secrets come from backend/.env.
 
 services:
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--save", "", "--appendonly", "no"]  # ephemeral; rate-limit counters only
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
   backend:
     build: ./backend
     env_file:
       - ./backend/.env
+    environment:
+      # Shared rate-limit store across gunicorn workers (overrides .env memory://).
+      RATELIMIT_STORAGE_URI: redis://redis:6379/0
     restart: unless-stopped
     expose:
       - "5000"
     volumes:
       - uploads:/app/uploads
+    depends_on:
+      redis:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:5000/api/health').status==200 else 1)"]
       interval: 30s

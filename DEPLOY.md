@@ -149,9 +149,10 @@ instant-switch demo mode.
 - **Memory budget:** nginx (~30 MB) + gunicorn (2–3 gthread workers, ~400–700 MB)
   fits well under 2 GB. Scale workers with `WEB_CONCURRENCY` in `backend/.env`.
 - **Persistence:** uploaded originals are kept in the `uploads` Docker volume.
-- **Rate limiting** uses in-process memory (fine for one box). If you later run
-  multiple API replicas, set `RATELIMIT_STORAGE_URI=redis://…` and add a Redis
-  service.
+- **Rate limiting** uses a bundled **Redis** container, so limits are shared and
+  exact across all gunicorn workers (`RATELIMIT_STORAGE_URI=redis://redis:6379/0`,
+  set in compose). Redis is configured ephemeral (no disk persistence) since it
+  only holds rate-limit counters; it idles at ~5–10 MB.
 - **Building on a 2 GB box:** the Vite build is memory-light, and the swap from
   step 1 covers any spike. Alternatively build images elsewhere and push to a
   registry.
