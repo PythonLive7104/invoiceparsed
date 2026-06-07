@@ -23,11 +23,12 @@ def create_app(config_class=Config) -> Flask:
     app = Flask(__name__)
     app.config.from_object(config_class)
 
-    # Behind nginx/the VPS reverse proxy: trust one hop of X-Forwarded-* so
-    # request.remote_addr is the real client IP (correct rate-limiting) and
-    # generated URLs use the external scheme/host.
-    if app.config.get("TRUST_PROXY", True):
-        app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
+    # Behind reverse proxies: trust N hops of X-Forwarded-* so request.remote_addr
+    # is the real client IP (correct rate-limiting) and URLs use the external
+    # scheme/host. 1 = nginx only, 2 = Caddy → nginx (TLS), 0 = none.
+    hops = int(app.config.get("PROXY_HOPS", 1))
+    if hops:
+        app.wsgi_app = ProxyFix(app.wsgi_app, x_for=hops, x_proto=hops, x_host=hops)
 
     db.init_app(app)
 

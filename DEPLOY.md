@@ -79,21 +79,34 @@ Updating later:
 git pull && docker compose up -d --build
 ```
 
-## 4. HTTPS (do this before launch)
+## 4. HTTPS / SSL certificate
 
-The compose file serves plain HTTP on :80. Two easy ways to add TLS:
+The base compose serves plain HTTP on :80. To get a real, auto-renewing SSL
+certificate, use the included **Caddy** override — it obtains and renews a free
+Let's Encrypt certificate automatically and proxies to the app over HTTPS.
 
-- **Cloudflare (simplest):** put the domain behind Cloudflare and set SSL mode to
-  "Flexible" (or "Full" with an origin cert). Zero server changes.
-- **Caddy reverse proxy (auto Let's Encrypt):** run Caddy on :443 in front of the
-  `web` container with a one-line `Caddyfile`:
-  ```
-  invoiceparsed.com {
-      reverse_proxy web:80
-  }
-  ```
-  Then change the `web` service to `expose: ["80"]` (drop the public `ports`) and
-  publish `443:443` from Caddy.
+**Prerequisites:** your domain's DNS **A record** (and `www`, if used) must point
+at this server's IP, and ports **80 + 443** must be open. Let's Encrypt cannot
+issue a certificate for a bare IP — you need the domain pointed first.
+
+```bash
+# Replace with your domain. Brings up backend + web + caddy (TLS).
+SITE_DOMAIN=invoiceparsed.com \
+  docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+```
+
+Caddy fetches the certificate on first start (watch `docker compose logs caddy`).
+Then `https://invoiceparsed.com` works, with HTTP auto-redirecting to HTTPS and
+`www` redirecting to the apex. Certificates are stored in the `caddy_data`
+volume and renew automatically — don't delete that volume.
+
+> Tip: persist the domain so you don't retype it. Create a root `.env` with
+> `SITE_DOMAIN=invoiceparsed.com` (Compose reads it automatically), then just run
+> `docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build`.
+
+**Alternative (no server TLS): Cloudflare.** Put the domain behind Cloudflare and
+set SSL mode to Full — TLS terminates at Cloudflare with zero server changes.
+Keep the base compose (port 80) for the origin.
 
 ## 5. Google OAuth (if enabled)
 

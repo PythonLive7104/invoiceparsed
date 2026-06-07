@@ -1,0 +1,15 @@
+# Caddy TLS edge. Automatically obtains & renews Let's Encrypt certificates for
+# the domain in $SITE_DOMAIN and reverse-proxies to the nginx (web) container.
+#
+# Requires: the domain's DNS A record points at this server, and ports 80 + 443
+# are open. Let's Encrypt cannot issue certs for a bare IP address.
+
+# Redirect www → apex (drop this block if you don't use a www record).
+www.{$SITE_DOMAIN} {
+	redir https://{$SITE_DOMAIN}{uri} permanent
+}
+
+{$SITE_DOMAIN} {
+	encode gzip
+	reverse_proxy web:80
+}

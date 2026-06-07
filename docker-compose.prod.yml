@@ -1,0 +1,37 @@
+# Production override: adds a Caddy TLS edge (auto Let's Encrypt HTTPS) in front
+# of the nginx (web) container. Apply on top of the base compose:
+#
+#   SITE_DOMAIN=invoiceparsed.com \
+#     docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+#
+# Prereqs: DNS A record for SITE_DOMAIN (and www) → this server, ports 80+443 open.
+
+services:
+  # Caddy is now the only thing on the host's 80/443, so stop publishing web's
+  # port (it's reached internally as web:80). !reset clears the base port mapping.
+  web:
+    ports: !reset []
+
+  # Two proxy hops now (Caddy → nginx), so trust 2 for the real client IP.
+  backend:
+    environment:
+      PROXY_HOPS: "2"
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      SITE_DOMAIN: ${SITE_DOMAIN:?set SITE_DOMAIN=yourdomain.com}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data      # persists issued certificates (don't lose this)
+      - caddy_config:/config
+    depends_on:
+      - web
+
+volumes:
+  caddy_data:
+  caddy_config:
