@@ -14,7 +14,7 @@ export const PLANS = {
     features: [
       "5 invoices / month",
       "PDF & image upload",
-      "JSON / CSV export",
+      "QuickBooks-compatible CSV + JSON",
       "Extraction history",
     ],
   },
@@ -34,7 +34,7 @@ export const PLANS = {
       "100 invoices / month",
       "Multi-file batch upload",
       "Multi-page invoices",
-      "JSON / CSV export",
+      "QuickBooks-compatible CSV + JSON",
       "Email support",
     ],
   },

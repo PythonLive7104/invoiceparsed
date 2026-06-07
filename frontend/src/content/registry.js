@@ -176,6 +176,10 @@ export const SITE_FAQS = [
     q: "Is there a free plan?",
     a: "Yes — the free plan includes 5 invoices per month with no credit card required.",
   },
+  {
+    q: "Does InvoiceParsed work with QuickBooks?",
+    a: "Yes. Every extraction can be exported as a QuickBooks-compatible CSV with bill/invoice columns (Bill No, Bill Date, Due Date, Terms, line-item Description/Qty/Rate/Amount, tax and total) that map cleanly in QuickBooks Online's CSV import. You can also export structured JSON or use the API.",
+  },
 ];
 
 /** Build the full list of sitemap entries from the registry. */

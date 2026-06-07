@@ -1,12 +1,17 @@
-"""Flatten an invoice into a QuickBooks-friendly CSV string."""
+"""Flatten an invoice into a QuickBooks-compatible CSV string.
+
+Column names use QuickBooks bill/invoice terminology (Bill No, Bill Date, Due
+Date, Terms, Description, Qty, Rate, Amount, …) so the file maps cleanly in
+QuickBooks Online's CSV import wizard with little or no remapping.
+"""
 import csv
 import io
 
 HEADERS = [
-    "vendor_name", "vendor_address", "vendor_email",
-    "invoice_number", "invoice_date", "due_date", "currency", "payment_terms",
-    "line_description", "line_quantity", "line_unit_price", "line_amount",
-    "subtotal", "tax", "total",
+    "Vendor", "Vendor Address", "Vendor Email",
+    "Bill No", "Bill Date", "Due Date", "Currency", "Terms",
+    "Description", "Qty", "Rate", "Amount",
+    "Subtotal", "Tax", "Total",
 ]
 
 

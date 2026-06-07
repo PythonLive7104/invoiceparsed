@@ -47,7 +47,7 @@ export function softwareApplicationSchema({
     featureList: [
       "AI invoice data extraction",
       "PDF and image (JPG, PNG) support",
-      "Structured JSON and CSV export",
+      "QuickBooks-compatible CSV and structured JSON export",
       "Per-field confidence scores",
       "Multi-page and batch invoice processing",
       "REST API and webhooks",

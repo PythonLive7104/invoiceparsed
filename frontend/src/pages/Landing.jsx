@@ -51,7 +51,7 @@ const audiences = [
 const features = [
   { icon: ScanLine, title: "Field-perfect extraction", desc: "Vendor, invoice number, dates, line items, subtotal, tax and total — every field, captured accurately." },
   { icon: Layers, title: "PDF & image, any layout", desc: "Upload PDFs or photos. Handles messy scans, multi-page invoices and unusual layouts." },
-  { icon: FileJson, title: "Clean JSON & CSV", desc: "Get a strict, structured JSON payload or a QuickBooks-ready CSV with one click." },
+  { icon: FileJson, title: "QuickBooks-compatible export", desc: "One click to a strict JSON payload or a QuickBooks-compatible CSV that maps straight into your accounting software." },
   { icon: Gauge, title: "95%+ accuracy", desc: "Tuned prompts and structured outputs keep extraction reliable on standard invoice formats." },
   { icon: Clock, title: "Seconds, not hours", desc: "What took a bookkeeper 6 hours a week now happens the moment you drop a file." },
   { icon: ShieldCheck, title: "Private by design", desc: "Your documents are processed for extraction only — no training, no resale of your data." },
