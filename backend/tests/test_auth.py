@@ -1,5 +1,5 @@
 """Auth + email-verification flow."""
-from tests.conftest import make_user
+from tests.conftest import make_user, auth_header
 
 
 def test_register_returns_no_token_and_needs_verification(client, app):
@@ -54,6 +54,44 @@ def test_wrong_password_is_401(client, app):
     make_user(app, email="real@example.com", verified=True, password="password123")
     r = client.post("/api/auth/login", json={"email": "real@example.com", "password": "nope"})
     assert r.status_code == 401
+
+
+def test_update_profile(client, app):
+    user = make_user(app, email="p@example.com")
+    r = client.patch("/api/auth/profile", json={"name": "New Name"}, headers=auth_header(app, user))
+    assert r.status_code == 200
+    assert r.get_json()["user"]["name"] == "New Name"
+
+
+def test_change_password_requires_correct_current(client, app):
+    user = make_user(app, email="cp@example.com", password="password123")
+    h = auth_header(app, user)
+    # Wrong current password is rejected.
+    bad = client.post("/api/auth/change-password",
+                      json={"currentPassword": "wrong", "newPassword": "newpassword1"}, headers=h)
+    assert bad.status_code == 400
+    # Correct current password works, and the new password can log in.
+    ok = client.post("/api/auth/change-password",
+                     json={"currentPassword": "password123", "newPassword": "newpassword1"}, headers=h)
+    assert ok.status_code == 200
+    login = client.post("/api/auth/login", json={"email": "cp@example.com", "password": "newpassword1"})
+    assert login.status_code == 200
+
+
+def test_delete_account_removes_user_and_data(client, app):
+    user = make_user(app, email="del@example.com")
+    from extensions import db
+    from models import Extraction, User
+    with app.app_context():
+        db.session.add(Extraction(user_id=user["id"], file_name="f", file_type="image/png",
+                                   file_size=1, data="{}", status="completed"))
+        db.session.commit()
+
+    r = client.delete("/api/auth/account", headers=auth_header(app, user))
+    assert r.status_code == 200
+    with app.app_context():
+        assert User.query.get(user["id"]) is None
+        assert Extraction.query.filter_by(user_id=user["id"]).count() == 0  # cascaded
 
 
 def test_password_reset_marks_verified(client, app):

@@ -92,7 +92,23 @@ export function AuthProvider({ children }) {
     await loadMe();
   }, [loadMe]);
 
+  const updateProfile = useCallback(async (name) => {
+    const { data } = await api.patch("/api/auth/profile", { name });
+    setUser(data.user);
+  }, []);
+
+  const changePassword = useCallback(async (currentPassword, newPassword) => {
+    await api.post("/api/auth/change-password", { currentPassword, newPassword });
+  }, []);
+
   const logout = useCallback(() => {
+    setToken(null);
+    setUser(null);
+    setUsage(null);
+  }, []);
+
+  const deleteAccount = useCallback(async () => {
+    await api.delete("/api/auth/account");
     setToken(null);
     setUser(null);
     setUsage(null);
@@ -120,6 +136,9 @@ export function AuthProvider({ children }) {
     resendVerification,
     forgotPassword,
     resetPassword,
+    updateProfile,
+    changePassword,
+    deleteAccount,
     logout,
     refreshUsage,
     setUsage,

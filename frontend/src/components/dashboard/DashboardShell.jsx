@@ -5,6 +5,7 @@ import {
   History,
   CreditCard,
   Webhook,
+  Settings,
   LogOut,
   Menu,
   X,
@@ -19,6 +20,7 @@ const nav = [
   { to: "/dashboard/history", label: "History", icon: History },
   { to: "/dashboard/api", label: "API & Webhooks", icon: Webhook },
   { to: "/dashboard/billing", label: "Billing", icon: CreditCard },
+  { to: "/dashboard/settings", label: "Settings", icon: Settings },
 ];
 
 export default function DashboardShell() {

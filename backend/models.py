@@ -43,6 +43,11 @@ class User(db.Model):
             "plan": self.plan,
             "image": self.image,
             "emailVerified": self.email_verified,
+            # Settings UI: whether a local password is set (Google-only accounts
+            # have none) and when the account was created.
+            "hasPassword": bool(self.password_hash),
+            "isGoogle": bool(self.google_sub),
+            "createdAt": self.created_at.isoformat() + "Z" if self.created_at else None,
         }
 
 

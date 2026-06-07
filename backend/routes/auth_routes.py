@@ -1,7 +1,11 @@
-"""Auth endpoints: register, login, me, Google sign-in, password reset."""
+"""Auth endpoints: register, login, me, Google sign-in, password reset, account."""
+import os
 import re
+import shutil
 
 from flask import Blueprint, current_app, g, jsonify, redirect, request
+
+from config import Config
 
 from auth import (
     hash_password,
@@ -241,3 +245,47 @@ def me():
     user = g.user
     usage = build_usage(_count_usage(user), user.plan)
     return jsonify({"user": user.public(), "usage": usage})
+
+
+# ─── Account settings ────────────────────────────────────────────────────────
+@auth_bp.patch("/profile")
+@login_required
+def update_profile():
+    """Update editable profile fields (currently the display name)."""
+    data = request.get_json(silent=True) or {}
+    g.user.name = (data.get("name") or "").strip() or None
+    db.session.commit()
+    return jsonify({"user": g.user.public()})
+
+
+@auth_bp.post("/change-password")
+@login_required
+def change_password():
+    """Change the account password. Requires the current password when one is
+    already set; Google-only accounts can set one without a current password."""
+    data = request.get_json(silent=True) or {}
+    new = data.get("newPassword") or ""
+    if len(new) < 8:
+        return jsonify({"error": "Password must be at least 8 characters."}), 400
+
+    user = g.user
+    if user.password_hash and not verify_password(data.get("currentPassword") or "", user.password_hash):
+        return jsonify({"error": "Your current password is incorrect."}), 400
+
+    user.password_hash = hash_password(new)
+    db.session.commit()
+    return jsonify({"success": True})
+
+
+@auth_bp.delete("/account")
+@login_required
+def delete_account():
+    """Permanently delete the account and all its data (extractions, API keys,
+    webhooks via cascade) plus stored upload files."""
+    user = g.user
+    # Remove stored original files for each extraction before the rows cascade.
+    for ext in Extraction.query.filter_by(user_id=user.id).all():
+        shutil.rmtree(os.path.join(Config.UPLOAD_DIR, ext.id), ignore_errors=True)
+    db.session.delete(user)
+    db.session.commit()
+    return jsonify({"success": True})

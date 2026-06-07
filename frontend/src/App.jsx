@@ -25,6 +25,7 @@ const History = lazy(() => import("@/pages/History.jsx"));
 const ExtractionDetail = lazy(() => import("@/pages/ExtractionDetail.jsx"));
 const Billing = lazy(() => import("@/pages/Billing.jsx"));
 const ApiSettings = lazy(() => import("@/pages/ApiSettings.jsx"));
+const Settings = lazy(() => import("@/pages/Settings.jsx"));
 
 function FullScreenLoader() {
   return (
@@ -98,6 +99,7 @@ export default function App() {
             <Route path="extractions/:id" element={<ExtractionDetail />} />
             <Route path="api" element={<ApiSettings />} />
             <Route path="billing" element={<Billing />} />
+            <Route path="settings" element={<Settings />} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
