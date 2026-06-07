@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { Search, FileText, Download, Trash2, Eye, Inbox, AlertCircle } from "lucide-react";
+import { Search, FileText, Receipt, Download, Trash2, Eye, Inbox, AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { cn, formatDate, formatMoney } from "@/lib/utils";
 import { api, downloadFile } from "@/lib/api";
@@ -82,10 +82,17 @@ export function HistoryTable({ initialItems }) {
                     <td className="px-5 py-3.5">
                       <div className="flex items-center gap-3">
                         <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-brand-500/12 text-brand-300">
-                          <FileText size={15} />
+                          {it.docType === "receipt" ? <Receipt size={15} /> : <FileText size={15} />}
                         </span>
                         <div className="min-w-0">
-                          <div className="truncate font-medium text-white">{it.vendorName || "Unknown vendor"}</div>
+                          <div className="flex items-center gap-2">
+                            <span className="truncate font-medium text-white">{it.vendorName || "Unknown vendor"}</span>
+                            {it.docType === "receipt" && (
+                              <span className="shrink-0 rounded-full bg-white/[0.06] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                                Receipt
+                              </span>
+                            )}
+                          </div>
                           <div className="truncate text-xs text-slate-500">{it.fileName}</div>
                         </div>
                       </div>

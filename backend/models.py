@@ -57,6 +57,9 @@ class Extraction(db.Model):
     id = db.Column(db.String, primary_key=True, default=_uuid)
     user_id = db.Column(db.String, db.ForeignKey("users.id"), nullable=False, index=True)
 
+    # invoice | receipt
+    doc_type = db.Column(db.String(20), nullable=False, default="invoice")
+
     # File metadata
     file_name = db.Column(db.String(255), nullable=False)
     file_type = db.Column(db.String(100), nullable=False)
@@ -79,6 +82,7 @@ class Extraction(db.Model):
     def list_item(self) -> dict:
         return {
             "id": self.id,
+            "docType": self.doc_type,
             "fileName": self.file_name,
             "fileType": self.file_type,
             "vendorName": self.vendor_name,

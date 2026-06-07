@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { ArrowLeft, Clock, FileText, Loader2 } from "lucide-react";
-import { InvoiceCard } from "@/components/dashboard/InvoiceCard";
+import { ResultCard } from "@/components/dashboard/ResultCard";
 import { api } from "@/lib/api";
 import { formatBytes, formatDate } from "@/lib/utils";
 
@@ -52,7 +52,7 @@ export default function ExtractionDetail() {
           </div>
 
           {row.status === "completed" && row.invoice ? (
-            <InvoiceCard invoice={row.invoice} extractionId={row.id} fileName={row.fileName} initialShowDoc />
+            <ResultCard docType={row.docType} invoice={row.invoice} extractionId={row.id} fileName={row.fileName} initialShowDoc />
           ) : (
             <div className="glass rounded-2xl p-8 text-center">
               <h2 className="text-lg font-semibold text-white">This extraction failed</h2>

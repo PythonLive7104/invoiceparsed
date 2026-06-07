@@ -21,7 +21,7 @@ FAKE_INVOICE = {
 
 def _stub_extract(monkeypatch):
     import routes.extract_routes as er
-    monkeypatch.setattr(er, "extract_invoice", lambda pages: FAKE_INVOICE)
+    monkeypatch.setattr(er, "extract_document", lambda pages, doc_type="invoice": FAKE_INVOICE)
 
 
 def test_batch_blocked_on_free(client, app, monkeypatch):
@@ -62,6 +62,43 @@ def test_multipage_blocked_on_free(client, app, monkeypatch):
     )
     assert r.status_code == 402
     assert r.get_json()["capability"] == "multiPage"
+
+
+FAKE_RECEIPT = {
+    "merchant": {"name": "Cafe Roma", "address": "5 High St"},
+    "receipt_date": "2026-02-01", "receipt_number": "R-9", "payment_method": "Visa ****1234",
+    "category": "Meals", "currency": "USD",
+    "line_items": [{"description": "Latte", "quantity": 2, "unit_price": 4, "amount": 8}],
+    "subtotal": 8, "tax": 0.8, "tip": 1.5, "total": 10.3,
+    "confidence": {k: 1.0 for k in (
+        "merchant", "receipt_date", "receipt_number", "payment_method", "category",
+        "currency", "line_items", "subtotal", "tax", "tip", "total")},
+}
+
+
+def test_receipt_extraction_stores_doc_type_and_headline(client, app, monkeypatch):
+    import routes.extract_routes as er
+    monkeypatch.setattr(er, "extract_document", lambda pages, doc_type="invoice": FAKE_RECEIPT)
+    user = make_user(app, plan="free")
+    r = client.post(
+        "/api/extract",
+        data={"file": _file("receipt.jpg"), "doc_type": "receipt"},
+        headers=auth_header(app, user),
+        content_type="multipart/form-data",
+    )
+    assert r.status_code == 200
+    body = r.get_json()
+    assert body["docType"] == "receipt"
+    assert body["invoice"]["merchant"]["name"] == "Cafe Roma"
+
+    # Headline columns mapped from receipt fields (merchant→vendor, date, total).
+    from models import Extraction
+    with app.app_context():
+        row = Extraction.query.get(body["id"])
+        assert row.doc_type == "receipt"
+        assert row.vendor_name == "Cafe Roma"
+        assert row.invoice_date == "2026-02-01"
+        assert row.total == 10.3
 
 
 def test_usage_limit_reached_returns_402(client, app, monkeypatch):

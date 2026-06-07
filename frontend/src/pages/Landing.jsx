@@ -77,10 +77,11 @@ export default function Landing() {
 
       {/* Answer-first paragraph for AEO — visually subtle, crawler-visible. */}
       <p className="container-page -mt-2 max-w-3xl pb-2 text-base leading-relaxed text-slate-400">
-        InvoiceParsed is an AI-powered invoice data extraction tool that turns
-        invoice PDFs and images into structured data — vendor, line items, tax and
-        totals — in seconds. Upload a file and export clean JSON or CSV, with a
-        confidence score on every field. No templates, no manual data entry.
+        InvoiceParsed is an AI-powered invoice and receipt data extraction tool
+        that turns invoice or receipt PDFs and images into structured data —
+        vendor, line items, tax and totals — in seconds. Upload a file and export
+        a QuickBooks-compatible CSV or JSON, with a confidence score on every
+        field. No templates, no manual data entry.
       </p>
 
       <section className="border-y border-white/[0.06] bg-white/[0.015] py-8">

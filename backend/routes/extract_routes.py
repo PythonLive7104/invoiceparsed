@@ -9,11 +9,12 @@ from werkzeug.utils import secure_filename
 
 from auth import api_or_login_required
 from config import Config
-from csv_util import invoice_to_csv
+from csv_util import invoice_to_csv, receipt_to_csv
 from extensions import db
-from invoice_schema import normalize
+from invoice_schema import normalize as normalize_invoice
+from receipt_schema import normalize as normalize_receipt
 from models import Extraction, User
-from openai_service import extract_invoice
+from openai_service import extract_document
 from plans import build_usage, plan_allows, start_of_month
 from webhooks import dispatch
 
@@ -21,6 +22,11 @@ extract_bp = Blueprint("extract", __name__, url_prefix="/api")
 
 ALLOWED_MIME = {"application/pdf", "image/jpeg", "image/jpg", "image/png"}
 ALLOWED_EXT = (".pdf", ".jpg", ".jpeg", ".png")
+DOC_TYPES = ("invoice", "receipt")
+
+
+def _normalize_for(doc_type: str):
+    return normalize_receipt if doc_type == "receipt" else normalize_invoice
 
 
 def _count_usage(user: User) -> int:
@@ -62,27 +68,36 @@ def _list_files(eid: str) -> list[dict]:
     return out
 
 
-def _serialize(row: Extraction, invoice) -> dict:
+def _serialize(row: Extraction, data) -> dict:
     return {
         "id": row.id,
+        "docType": row.doc_type,
         "fileName": row.file_name,
         "fileType": row.file_type,
         "fileSize": row.file_size,
         "status": row.status,
         "createdAt": row.created_at.isoformat() + "Z",
-        "invoice": invoice,
+        "invoice": data,  # the extracted document (invoice or receipt shape)
         "files": _list_files(row.id),
     }
 
 
-def _apply_headline_fields(row: Extraction, invoice: dict) -> None:
-    row.vendor_name = (invoice.get("vendor") or {}).get("name")
-    row.invoice_number = invoice.get("invoice_number")
-    row.invoice_date = invoice.get("invoice_date")
-    row.due_date = invoice.get("due_date")
-    row.currency = invoice.get("currency")
-    row.total = invoice.get("total")
-    row.data = json.dumps(invoice)
+def _apply_headline_fields(row: Extraction, data: dict) -> None:
+    """Denormalize headline fields for fast list rendering. Maps both invoice and
+    receipt shapes onto the shared columns (merchant→vendor, receipt_date→date)."""
+    if row.doc_type == "receipt":
+        row.vendor_name = (data.get("merchant") or {}).get("name")
+        row.invoice_number = data.get("receipt_number")
+        row.invoice_date = data.get("receipt_date")
+        row.due_date = None
+    else:
+        row.vendor_name = (data.get("vendor") or {}).get("name")
+        row.invoice_number = data.get("invoice_number")
+        row.invoice_date = data.get("invoice_date")
+        row.due_date = data.get("due_date")
+    row.currency = data.get("currency")
+    row.total = data.get("total")
+    row.data = json.dumps(data)
 
 
 # ─── Extraction ──────────────────────────────────────────────────────────────
@@ -111,6 +126,10 @@ def extract():
     files = [f for f in request.files.getlist("file") if f and f.filename]
     if not files:
         return jsonify({"error": "No file provided."}), 400
+
+    doc_type = (request.form.get("doc_type") or "invoice").lower()
+    if doc_type not in DOC_TYPES:
+        doc_type = "invoice"
 
     mode = (request.form.get("mode") or "single").lower()
 
@@ -155,10 +174,11 @@ def extract():
     )
 
     try:
-        invoice = extract_invoice(pages)
+        document = extract_document(pages, doc_type)
     except Exception as exc:  # noqa: BLE001 — surface a clean message to the client
         failed = Extraction(
             user_id=user.id,
+            doc_type=doc_type,
             file_name=display_name,
             file_type=primary["mime"],
             file_size=total_size,
@@ -171,19 +191,20 @@ def extract():
 
     record = Extraction(
         user_id=user.id,
+        doc_type=doc_type,
         file_name=display_name,
         file_type=primary["mime"],
         file_size=total_size,
         status="completed",
     )
-    _apply_headline_fields(record, invoice)
+    _apply_headline_fields(record, document)
     db.session.add(record)
     db.session.commit()
 
     # Persist the originals so they can be viewed later.
     _save_files(record.id, pages)
 
-    payload = _serialize(record, invoice)
+    payload = _serialize(record, document)
 
     # Fire webhooks (background thread; never blocks the response).
     dispatch(
@@ -234,10 +255,10 @@ def update_extraction(eid):
     if not isinstance(inv, dict):
         return jsonify({"error": "Expected an 'invoice' object."}), 400
 
-    invoice = normalize(inv)
-    _apply_headline_fields(row, invoice)
+    data = _normalize_for(row.doc_type)(inv)
+    _apply_headline_fields(row, data)
     db.session.commit()
-    return jsonify(_serialize(row, invoice))
+    return jsonify(_serialize(row, data))
 
 
 @extract_bp.delete("/extractions/<eid>")
@@ -284,8 +305,8 @@ def download_csv(eid):
     if row is None or row.status != "completed":
         return jsonify({"error": "Extraction not found."}), 404
 
-    invoice = json.loads(row.data)
-    csv_text = invoice_to_csv(invoice)
+    data = json.loads(row.data)
+    csv_text = receipt_to_csv(data) if row.doc_type == "receipt" else invoice_to_csv(data)
     safe = "".join(c if c.isalnum() or c in "-_" else "_" for c in (row.invoice_number or row.vendor_name or row.id))
     return Response(
         csv_text,

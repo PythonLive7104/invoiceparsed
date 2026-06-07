@@ -2,7 +2,14 @@
 
 Planned features, not yet built. Captured so they're not lost.
 
-## Receipt support (growth feature)
+## ✅ Receipt support — SHIPPED
+
+Receipts are now a first-class document type alongside invoices: a type toggle on
+upload, a dedicated receipt schema (merchant, date, payment method, category,
+tip, totals + confidence), a `ReceiptCard`, expense-friendly CSV, and history
+labelling. Implementation below kept for reference.
+
+<details><summary>Original plan</summary>
 
 **Why:** Today InvoiceParsed targets *invoices*. Adding *receipts* expands the
 addressable market significantly — freelancers and SMBs photograph expense
@@ -42,3 +49,12 @@ low architectural risk.
 
 **Pricing angle:** could be a paid-tier differentiator, or included to drive
 free-plan signups and broaden the funnel.
+
+</details>
+
+## Still planned
+
+- **Receipt-specific marketing pages** — a `/use-cases/receipts` and a "receipt
+  OCR" blog post in `content/registry.js` (auto-flows into sitemap + prerender).
+- **QuickBooks API sync** — true one-click push (OAuth + API) instead of CSV
+  import. Bigger lift; CSV covers the near term.

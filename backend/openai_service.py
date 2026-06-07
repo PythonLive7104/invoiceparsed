@@ -11,6 +11,9 @@ from openai import OpenAI
 
 from config import Config
 from invoice_schema import INVOICE_JSON_SCHEMA, normalize
+from invoice_schema import normalize as normalize_invoice
+from receipt_schema import RECEIPT_JSON_SCHEMA
+from receipt_schema import normalize as normalize_receipt
 
 SYSTEM_PROMPT = """You are an expert invoice data-extraction engine for InvoiceParsed.
 You receive one invoice (possibly spanning multiple pages or files) as images
@@ -30,6 +33,30 @@ Rules:
   object: 1 means you are certain the value is correct and clearly legible; lower
   values mean the value was unclear, ambiguous, inferred, or not found (use a value
   near 0 for fields you returned as null)."""
+
+RECEIPT_PROMPT = """You are an expert receipt data-extraction engine for InvoiceParsed.
+You receive one receipt (possibly spanning multiple pages/photos) as images
+and/or PDFs and return clean, structured data.
+
+Rules:
+- All provided pages/files belong to the SAME receipt. Merge them into one result.
+- Extract values exactly as they appear. Do not invent data.
+- Normalize dates to ISO 8601 (YYYY-MM-DD) when unambiguous.
+- Use the ISO 4217 currency code (e.g. USD, EUR, GBP) inferred from symbols or text.
+- payment_method: capture how it was paid (e.g. "Visa ****1234", "Cash", "Amex").
+- category: infer a best-guess expense category (e.g. Meals, Travel, Fuel,
+  Office Supplies, Groceries). Use null only if there is no reasonable guess.
+- Numeric fields must be plain numbers with no symbols, commas or separators.
+- tip is the gratuity if present, else null. If a field is genuinely absent, null.
+- For every field, also report a confidence score from 0 to 1 in `confidence`:
+  1 = certain and clearly legible; lower = unclear/inferred/not found (near 0 for
+  fields returned as null)."""
+
+# Per document type: (prompt, json schema, schema name, normalizer).
+_DOC_TYPES = {
+    "invoice": (SYSTEM_PROMPT, INVOICE_JSON_SCHEMA, "invoice", normalize_invoice),
+    "receipt": (RECEIPT_PROMPT, RECEIPT_JSON_SCHEMA, "receipt", normalize_receipt),
+}
 
 _client = None
 
@@ -64,21 +91,23 @@ def _content_part(page: dict) -> dict:
     }
 
 
-def extract_invoice(pages: list[dict]) -> dict:
-    """Run extraction on one or more pages of a single invoice.
+def extract_document(pages: list[dict], doc_type: str = "invoice") -> dict:
+    """Run extraction on one or more pages of a single document (invoice|receipt).
 
     `pages` is a list of dicts: {"bytes": ..., "mime": ..., "name": ...}.
-    A single-page invoice is just a list of length 1. Returns a normalized invoice.
+    A single-page document is just a list of length 1. Returns normalized data.
     """
     if not pages:
         raise RuntimeError("No pages provided for extraction.")
+    prompt, schema, schema_name, normalizer = _DOC_TYPES.get(doc_type, _DOC_TYPES["invoice"])
+    label = "receipt" if doc_type == "receipt" else "invoice"
 
     intro = (
-        f"This invoice spans {len(pages)} pages/files provided below, in order. "
-        "Extract all structured data into the required schema, merging the pages "
+        f"This {label} spans {len(pages)} pages/files provided below, in order. "
+        f"Extract all structured data into the required schema, merging the pages "
         "into one result."
         if len(pages) > 1
-        else "Extract all structured data from this invoice into the required schema."
+        else f"Extract all structured data from this {label} into the required schema."
     )
 
     user_content = [{"type": "text", "text": intro}]
@@ -89,16 +118,12 @@ def extract_invoice(pages: list[dict]) -> dict:
         model=Config.OPENAI_MODEL,
         temperature=0,
         messages=[
-            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "system", "content": prompt},
             {"role": "user", "content": user_content},
         ],
         response_format={
             "type": "json_schema",
-            "json_schema": {
-                "name": "invoice",
-                "strict": True,
-                "schema": INVOICE_JSON_SCHEMA,
-            },
+            "json_schema": {"name": schema_name, "strict": True, "schema": schema},
         },
     )
 
@@ -111,4 +136,9 @@ def extract_invoice(pages: list[dict]) -> dict:
     except json.JSONDecodeError as exc:
         raise RuntimeError("The model returned invalid JSON.") from exc
 
-    return normalize(parsed)
+    return normalizer(parsed)
+
+
+def extract_invoice(pages: list[dict]) -> dict:
+    """Back-compat wrapper for invoice extraction."""
+    return extract_document(pages, "invoice")

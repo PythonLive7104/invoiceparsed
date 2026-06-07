@@ -45,7 +45,7 @@ export function softwareApplicationSchema({
     description: SITE.description,
     image: absoluteUrl(SITE.ogImage),
     featureList: [
-      "AI invoice data extraction",
+      "AI invoice and receipt data extraction",
       "PDF and image (JPG, PNG) support",
       "QuickBooks-compatible CSV and structured JSON export",
       "Per-field confidence scores",

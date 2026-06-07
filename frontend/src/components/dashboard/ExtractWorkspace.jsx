@@ -17,9 +17,10 @@ import {
   Files,
   Lock,
   MinusCircle,
+  Receipt,
 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
-import { InvoiceCard } from "@/components/dashboard/InvoiceCard";
+import { ResultCard } from "@/components/dashboard/ResultCard";
 import { cn, formatBytes } from "@/lib/utils";
 import { api, apiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth.jsx";
@@ -41,6 +42,7 @@ export function ExtractWorkspace() {
 
   const [status, setStatus] = useState("idle"); // idle|selected|processing|done|error
   const [files, setFiles] = useState([]);
+  const [docType, setDocType] = useState("invoice"); // invoice|receipt
   const [mode, setMode] = useState("single"); // single|batch|combine
   const [result, setResult] = useState(null); // single/combine result
   const [batchItems, setBatchItems] = useState([]); // batch results
@@ -105,12 +107,13 @@ export function ExtractWorkspace() {
     try {
       const fd = new FormData();
       (isCombine ? files : [files[0]]).forEach((f) => fd.append("file", f));
+      fd.append("doc_type", docType);
       const { data } = await api.post("/api/extract", fd, {
         onUploadProgress: (e) => {
           if (e.total) setUploadPct(Math.round((e.loaded / e.total) * 100));
         },
       });
-      setResult({ id: data.id, fileName: data.fileName, invoice: data.invoice });
+      setResult({ id: data.id, fileName: data.fileName, invoice: data.invoice, docType: data.docType });
       setUsage(data.usage);
       setStatus("done");
     } catch (err) {
@@ -133,6 +136,7 @@ export function ExtractWorkspace() {
         const fd = new FormData();
         fd.append("file", files[i]);
         fd.append("mode", "batch");
+        fd.append("doc_type", docType);
         const { data } = await api.post("/api/extract", fd, {
           onUploadProgress: (e) => {
             if (!e.total) return;
@@ -160,6 +164,10 @@ export function ExtractWorkspace() {
     <div className="space-y-6">
       {atLimit && status !== "done" && <LimitBanner usage={usage} />}
 
+      {(status === "idle" || status === "selected") && (
+        <DocTypeToggle value={docType} onChange={setDocType} disabled={atLimit} />
+      )}
+
       <AnimatePresence mode="wait">
         {status === "done" ? (
           <motion.div key="result" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-4">
@@ -183,7 +191,7 @@ export function ExtractWorkspace() {
                   </Button>
                 </div>
                 {result && (
-                  <InvoiceCard invoice={result.invoice} extractionId={result.id} fileName={result.fileName} />
+                  <ResultCard docType={result.docType} invoice={result.invoice} extractionId={result.id} fileName={result.fileName} />
                 )}
               </>
             )}
@@ -542,13 +550,45 @@ function BatchResults({ items, onReset }) {
 
       <div className="space-y-4">
         {ok.map((it) => (
-          <InvoiceCard
+          <ResultCard
             key={it.result.id}
+            docType={it.result.docType}
             invoice={it.result.invoice}
             extractionId={it.result.id}
             fileName={it.result.fileName}
           />
         ))}
+      </div>
+    </div>
+  );
+}
+
+function DocTypeToggle({ value, onChange, disabled }) {
+  const opts = [
+    { id: "invoice", label: "Invoice", icon: FileText },
+    { id: "receipt", label: "Receipt", icon: Receipt },
+  ];
+  return (
+    <div className="flex items-center gap-3">
+      <span className="text-sm text-slate-400">Document type</span>
+      <div className="inline-flex rounded-xl border border-white/10 bg-white/[0.03] p-1">
+        {opts.map((o) => {
+          const active = value === o.id;
+          return (
+            <button
+              key={o.id}
+              type="button"
+              disabled={disabled}
+              onClick={() => onChange(o.id)}
+              className={cn(
+                "inline-flex items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-sm font-medium transition-all disabled:opacity-50",
+                active ? "bg-brand-gradient text-white shadow-glow-sm" : "text-slate-300 hover:text-white",
+              )}
+            >
+              <o.icon size={15} /> {o.label}
+            </button>
+          );
+        })}
       </div>
     </div>
   );

@@ -2,7 +2,7 @@
 import csv
 import io
 
-from csv_util import invoice_to_csv, HEADERS
+from csv_util import invoice_to_csv, receipt_to_csv, HEADERS, RECEIPT_HEADERS
 
 
 def _invoice():
@@ -38,3 +38,18 @@ def test_one_row_per_line_item_totals_only_on_first():
     # Totals only on the first row (avoids double counting on import).
     assert first[HEADERS.index("Total")] == "242"
     assert second[HEADERS.index("Total")] == ""
+
+
+def test_receipt_csv_has_expense_columns():
+    rec = {
+        "merchant": {"name": "Cafe", "address": "5 St"},
+        "receipt_date": "2026-02-01", "receipt_number": "R-9",
+        "payment_method": "Visa ****1234", "category": "Meals", "currency": "USD",
+        "line_items": [{"description": "Latte", "quantity": 2, "unit_price": 4, "amount": 8}],
+        "subtotal": 8, "tax": 0.8, "tip": 1.5, "total": 10.3,
+    }
+    rows = list(csv.reader(io.StringIO(receipt_to_csv(rec))))
+    assert rows[0] == RECEIPT_HEADERS
+    assert {"Merchant", "Payment Method", "Category", "Tip"} <= set(RECEIPT_HEADERS)
+    assert rows[1][RECEIPT_HEADERS.index("Merchant")] == "Cafe"
+    assert rows[1][RECEIPT_HEADERS.index("Tip")] == "1.5"
