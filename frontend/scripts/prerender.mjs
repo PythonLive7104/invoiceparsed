@@ -153,10 +153,12 @@ function render(page) {
 let count = 0;
 for (const page of pages()) {
   const html = render(page);
+  // Flat files (/pricing.html, /blog/<slug>.html) — served without a
+  // trailing-slash redirect, so the served URL matches the canonical exactly.
   const file =
     page.path === "/"
       ? resolve(DIST, "index.html")
-      : resolve(DIST, page.path.replace(/^\//, ""), "index.html");
+      : resolve(DIST, page.path.replace(/^\//, "") + ".html");
   mkdirSync(dirname(file), { recursive: true });
   writeFileSync(file, html, "utf8");
   count++;
