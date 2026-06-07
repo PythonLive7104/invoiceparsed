@@ -50,6 +50,8 @@ export function ExtractWorkspace() {
   const [uploadPct, setUploadPct] = useState(0); // single/combine upload progress
 
   const atLimit = usage?.atLimit;
+  const docLabel = docType === "receipt" ? "receipt" : "invoice";
+  const docArticle = docType === "receipt" ? "a" : "an";
 
   const onDrop = useCallback(
     (accepted, rejected) => {
@@ -200,7 +202,7 @@ export function ExtractWorkspace() {
           mode === "batch" ? (
             <BatchProgress key="batchproc" items={batchItems} />
           ) : (
-            <ProcessingState key="processing" files={files} combine={mode === "combine"} uploadPct={uploadPct} />
+            <ProcessingState key="processing" files={files} combine={mode === "combine"} uploadPct={uploadPct} docLabel={docLabel} />
           )
         ) : (
           <motion.div key="upload" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
@@ -219,6 +221,7 @@ export function ExtractWorkspace() {
                   files={files}
                   canBatch={canBatch}
                   canMultiPage={canMultiPage}
+                  docLabel={docLabel}
                   disabled={atLimit}
                   onRemove={removeFile}
                   onAddMore={open}
@@ -236,7 +239,7 @@ export function ExtractWorkspace() {
                     </span>
                   </div>
                   <h3 className="text-xl font-semibold text-white">
-                    {isDragActive ? "Drop your invoice here" : "Upload an invoice"}
+                    {isDragActive ? `Drop your ${docLabel} here` : `Upload ${docArticle} ${docLabel}`}
                   </h3>
                   <p className="mt-2 max-w-sm text-sm text-slate-400">
                     {canMulti
@@ -255,7 +258,7 @@ export function ExtractWorkspace() {
                   {!canMulti && (
                     <p className="mt-5 flex items-center gap-1.5 text-xs text-slate-500">
                       <Lock size={12} />
-                      Batch upload & multi-page invoices are on{" "}
+                      Batch upload & multi-page documents are on{" "}
                       <Link to="/dashboard/billing" className="text-brand-300 hover:text-brand-200">
                         paid plans
                       </Link>
@@ -313,6 +316,7 @@ function SelectedFiles({
   files,
   canBatch,
   canMultiPage,
+  docLabel = "invoice",
   disabled,
   onRemove,
   onAddMore,
@@ -363,12 +367,12 @@ function SelectedFiles({
           <>
             {canBatch && (
               <Button onClick={onBatch} disabled={disabled} type="button">
-                <Files size={16} /> Extract as {files.length} separate invoices
+                <Files size={16} /> Extract as {files.length} separate {docLabel}s
               </Button>
             )}
             {canMultiPage && (
               <Button onClick={onCombine} disabled={disabled} variant="secondary" type="button">
-                <Layers size={16} /> Combine into one invoice
+                <Layers size={16} /> Combine into one {docLabel}
               </Button>
             )}
           </>
@@ -387,7 +391,7 @@ const PROCESS_STEPS = [
   { icon: Sparkles, label: "Structuring fields" },
 ];
 
-function ProcessingState({ files, combine, uploadPct = 0 }) {
+function ProcessingState({ files, combine, uploadPct = 0, docLabel = "invoice" }) {
   // Phase 1: real, determinate upload progress (0–100%).
   // Phase 2: indeterminate server-side extraction (reading → structuring).
   const uploading = uploadPct < 100;
@@ -412,7 +416,7 @@ function ProcessingState({ files, combine, uploadPct = 0 }) {
         </span>
       </div>
       <h3 className="text-lg font-semibold text-white">
-        {uploading ? "Uploading…" : "Extracting your invoice…"}
+        {uploading ? "Uploading…" : `Extracting your ${docLabel}…`}
       </h3>
       <p className="mt-1 max-w-xs text-sm text-slate-500">
         {uploading

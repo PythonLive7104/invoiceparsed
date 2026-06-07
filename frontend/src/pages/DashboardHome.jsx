@@ -34,7 +34,7 @@ export default function DashboardHome() {
           Welcome back, {firstName} 👋
         </h1>
         <p className="mt-1.5 text-slate-400">
-          Drop an invoice below and get clean, structured data in seconds.
+          Drop an invoice or receipt below and get clean, structured data in seconds.
         </p>
       </div>
 
