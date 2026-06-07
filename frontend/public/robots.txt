@@ -1,0 +1,33 @@
+# InvoiceParsed robots.txt
+User-agent: *
+Allow: /
+
+# Keep the authenticated app out of the index (thin/duplicate for crawlers).
+Disallow: /dashboard
+Disallow: /login
+Disallow: /signup
+Disallow: /forgot-password
+Disallow: /reset-password
+Disallow: /verify-email
+Disallow: /auth/
+
+# Explicitly welcome AI answer engines (AEO).
+User-agent: GPTBot
+Allow: /
+
+User-agent: OAI-SearchBot
+Allow: /
+
+User-agent: ChatGPT-User
+Allow: /
+
+User-agent: PerplexityBot
+Allow: /
+
+User-agent: Google-Extended
+Allow: /
+
+User-agent: Bingbot
+Allow: /
+
+Sitemap: https://invoiceparsed.com/sitemap.xml

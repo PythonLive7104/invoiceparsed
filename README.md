@@ -127,9 +127,12 @@ React context ([frontend/src/lib/auth.jsx](frontend/src/lib/auth.jsx)).
 
 | Method | Endpoint                     | Auth | Description                       |
 | ------ | ---------------------------- | ---- | --------------------------------- |
-| POST   | `/api/auth/register`         | —    | Create account → `{user, token}`  |
-| POST   | `/api/auth/login`            | —    | Login → `{user, token}`           |
+| POST   | `/api/auth/register`         | —    | Create account → `{user, needsVerification}` (no token until email confirmed) |
+| POST   | `/api/auth/login`            | —    | Login → `{user, token}` (403 `email_unverified` if not confirmed) |
+| POST   | `/api/auth/verify-email`     | —    | Confirm email from link → `{user, token}` |
+| POST   | `/api/auth/resend-verification` | — | Re-send the confirmation email    |
 | POST   | `/api/auth/google`           | —    | Google sign-in (ID token) → `{user, token}` |
+| POST   | `/api/auth/google/callback`  | —    | Google redirect-mode landing (form POST) |
 | POST   | `/api/auth/forgot-password`  | —    | Email a reset link (via Resend)   |
 | POST   | `/api/auth/reset-password`   | —    | Set a new password from a token   |
 | GET    | `/api/auth/me`               | ✓    | Current user + usage              |
@@ -142,7 +145,10 @@ React context ([frontend/src/lib/auth.jsx](frontend/src/lib/auth.jsx)).
 | GET    | `/api/extractions/<id>/files`| ✓/🔑 | List stored original files        |
 | GET    | `/api/extractions/<id>/file/<n>` | ✓/🔑 | Fetch an original page/file   |
 | GET    | `/api/usage`                 | ✓    | Usage vs plan limit               |
-| POST   | `/api/billing/upgrade`       | ✓    | Change plan (demo)                |
+| GET    | `/api/billing/config`        | —    | Whether billing is live or demo   |
+| POST   | `/api/billing/checkout`      | ✓    | Start Dodo checkout → `{url}` (or demo switch) |
+| POST   | `/api/billing/upgrade`       | ✓    | Instant plan switch (demo)        |
+| POST   | `/api/billing/webhook`       | 🔒   | Dodo webhook (Standard-Webhooks signed) |
 | GET/POST/DELETE | `/api/keys[/<id>]`  | ✓    | Manage API keys (Pro)             |
 | GET/POST/DELETE | `/api/webhooks[/<id>]` | ✓ | Manage webhooks (Pro)            |
 | POST   | `/api/webhooks/<id>/test`    | ✓    | Send a test webhook               |
@@ -150,9 +156,15 @@ React context ([frontend/src/lib/auth.jsx](frontend/src/lib/auth.jsx)).
 | GET    | `/api/plans`                 | —    | Plan catalog                      |
 
 `✓` = JWT session · `🔑` = JWT **or** a Pro API key (`Authorization: Bearer ip_live_…`
-or `X-API-Key`). Extraction/read endpoints accept both; account, billing, key and
-webhook management are JWT-only. Extraction events are POSTed to active webhooks,
-signed with `X-InvoiceParsed-Signature: sha256=<HMAC>`.
+or `X-API-Key`) · `🔒` = no auth header, verified by request signature.
+Extraction/read endpoints accept both; account, billing, key and webhook
+management are JWT-only. Extraction events are POSTed to active webhooks, signed
+with `X-InvoiceParsed-Signature: sha256=<HMAC>`, and **retried with exponential
+backoff** until a 2xx (see `WEBHOOK_*` settings).
+
+All endpoints are **rate-limited** per IP (`RATELIMIT_DEFAULT`); credential and
+email-sending auth endpoints get a tighter budget (`RATELIMIT_AUTH`). Over the
+limit returns `429` with `{"code": "RATE_LIMITED"}`.
 
 The `/api/extract` payload follows the PRD invoice schema — see
 [backend/invoice_schema.py](backend/invoice_schema.py).
@@ -175,8 +187,8 @@ The `/api/extract` payload follows the PRD invoice schema — see
 - **REST API** *(Pro)* — create API keys in the dashboard and hit the same
   endpoints programmatically with `X-API-Key` / `Authorization: Bearer ip_live_…`.
 - **Webhooks** *(Pro)* — register endpoints that receive a signed
-  `extraction.completed` POST whenever an extraction finishes; test deliveries
-  from the dashboard.
+  `extraction.completed` POST whenever an extraction finishes; failed deliveries
+  are retried with exponential backoff; test deliveries from the dashboard.
 - **Per-field confidence scores** — every extraction returns a 0–100% confidence
   per field (model self-assessed); shown as colour-coded badges in the result
   card plus an overall "% confident" pill.
@@ -190,8 +202,11 @@ The `/api/extract` payload follows the PRD invoice schema — see
   upgrade prompts. `batch` and `multiPage` are plan capabilities gated
   server-side (Starter + Pro), exposed via `usage.capabilities`.
 - **History** — searchable table with view / CSV / delete.
-- **Billing** — Free / Starter / Pro / **Business** plans with instant switch
-  (Dodo Payments checkout stubbed for the demo).
+- **Billing** — Free / Starter / Pro / **Business** plans. Live **Dodo Payments**
+  hosted checkout when configured (plan applied via signed webhook), with an
+  instant-switch demo mode when no API key is set.
+- **Abuse protection** — per-IP rate limiting on all endpoints, with a tighter
+  budget on auth/credential routes (Flask-Limiter; Redis-backed in prod).
 - **B2C + B2B positioning** — the landing page has a "who it's for" split
   (individuals vs teams) and an **Individuals / Businesses** pricing toggle that
   swaps the plan set; plans carry a `segment` tag (`personal` / `business` /
@@ -202,11 +217,36 @@ The `/api/extract` payload follows the PRD invoice schema — see
 
 ---
 
+## Tests
+
+```bash
+cd backend
+pytest                 # runs the suite in backend/tests
+```
+
+The suite covers auth + email verification, plan-capability gating (batch /
+multi-page / usage limits), webhook signing & retry/backoff, and billing
+(demo upgrade, Dodo checkout, signed webhooks). Tests use a temporary SQLite DB
+and stub all external services — nothing leaves the machine.
+
 ## Going to production
 
-- Set a strong `JWT_SECRET` and point `DATABASE_URL` at Postgres
-  (`pip install psycopg[binary]`, then `postgresql+psycopg://...`).
-- Serve Flask behind a WSGI server (gunicorn) and the frontend as a static
-  build (`npm run build` → deploy `frontend/dist`).
-- Wire `/api/billing/upgrade` to a real Dodo Payments checkout + webhook.
-- Set `FRONTEND_ORIGIN` to your deployed frontend URL.
+- **Secrets & DB:** set a strong `JWT_SECRET` and point the database at Postgres
+  (this project ships with `psycopg2-binary`; Supabase's pooler works — see
+  `SUPABASE_URL`). `create_all()` won't alter existing tables, so apply schema
+  changes with a migration/SQL when upgrading.
+- **WSGI server:** serve Flask with gunicorn (config included):
+  ```bash
+  cd backend
+  gunicorn -c gunicorn.conf.py wsgi:app
+  ```
+  Serve the frontend as a static build (`npm run build` → deploy `frontend/dist`).
+- **Payments (Dodo):** set `DODO_API_KEY`, `DODO_WEBHOOK_SECRET`, and the
+  `DODO_PRODUCT_*` ids. The billing UI then opens a hosted Dodo checkout via
+  `POST /api/billing/checkout`, and `POST /api/billing/webhook`
+  (Standard-Webhooks signature-verified) applies the plan on payment. With no
+  key set, billing runs in demo mode (instant switch).
+- **Rate limiting:** enabled by default (per-IP). In production set
+  `RATELIMIT_STORAGE_URI=redis://...` so limits are shared across workers.
+- **CORS:** set `FRONTEND_ORIGIN` (comma-separated) to your deployed frontend
+  URL(s).

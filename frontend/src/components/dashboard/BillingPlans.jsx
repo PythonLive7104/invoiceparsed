@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Check, Receipt, Loader2, BadgeCheck, Info } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { cn } from "@/lib/utils";
@@ -10,13 +10,23 @@ export function BillingPlans() {
   const { user, refreshUsage } = useAuth();
   const currentPlan = user?.plan;
   const [pending, setPending] = useState(null);
+  const [live, setLive] = useState(false);
+
+  useEffect(() => {
+    api.get("/api/billing/config").then(({ data }) => setLive(!!data.live)).catch(() => {});
+  }, []);
 
   async function choose(planId) {
     if (planId === currentPlan) return;
     setPending(planId);
     try {
-      await api.post("/api/billing/upgrade", { plan: planId });
-      await refreshUsage();
+      const { data } = await api.post("/api/billing/checkout", { plan: planId });
+      if (data?.url) {
+        // Live mode → hand off to the hosted Dodo Payments checkout.
+        window.location.href = data.url;
+        return;
+      }
+      await refreshUsage(); // demo mode applied instantly
     } catch {
       /* ignore */
     }
@@ -25,13 +35,15 @@ export function BillingPlans() {
 
   return (
     <div className="space-y-5">
-      <div className="flex items-start gap-2.5 rounded-xl border border-brand-400/20 bg-brand-500/[0.06] px-4 py-3 text-sm text-brand-200">
-        <Info size={16} className="mt-0.5 shrink-0" />
-        <span>
-          Demo mode — plan changes apply instantly. In production this opens a secure Dodo
-          Payments checkout.
-        </span>
-      </div>
+      {!live && (
+        <div className="flex items-start gap-2.5 rounded-xl border border-brand-400/20 bg-brand-500/[0.06] px-4 py-3 text-sm text-brand-200">
+          <Info size={16} className="mt-0.5 shrink-0" />
+          <span>
+            Demo mode — plan changes apply instantly. In production this opens a secure Dodo
+            Payments checkout.
+          </span>
+        </div>
+      )}
 
       <div className="grid items-stretch gap-5 sm:grid-cols-2 xl:grid-cols-4">
         {PLAN_ORDER.map((id) => {

@@ -15,13 +15,16 @@ from auth import (
     verify_verify_token,
 )
 from emails import send_password_reset, send_verification
-from extensions import db
+from extensions import db, limiter
 from models import Extraction, User
 from plans import build_usage, start_of_month
 
 auth_bp = Blueprint("auth", __name__, url_prefix="/api/auth")
 
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+# Per-IP throttle for credential / email-sending endpoints (brute-force + spam).
+auth_limit = limiter.limit(lambda: current_app.config["RATELIMIT_AUTH"])
 
 
 def _send_verification(user: User) -> None:
@@ -41,6 +44,7 @@ def _count_usage(user: User) -> int:
 
 
 @auth_bp.post("/register")
+@auth_limit
 def register():
     data = request.get_json(silent=True) or {}
     email = (data.get("email") or "").strip().lower()
@@ -71,6 +75,7 @@ def register():
 
 
 @auth_bp.post("/login")
+@auth_limit
 def login():
     data = request.get_json(silent=True) or {}
     email = (data.get("email") or "").strip().lower()
@@ -120,6 +125,7 @@ def _upsert_google_user(info: dict) -> User:
 
 
 @auth_bp.post("/google")
+@auth_limit
 def google_auth():
     """Popup/JS flow: the frontend posts the ID token as JSON and gets a JWT back."""
     data = request.get_json(silent=True) or {}
@@ -132,6 +138,7 @@ def google_auth():
 
 
 @auth_bp.post("/google/callback")
+@auth_limit
 def google_callback():
     """Redirect flow (GIS ux_mode="redirect"). Google submits a top-level form
     POST here with the ID token and a CSRF token. We verify the double-submit
@@ -158,6 +165,7 @@ def google_callback():
 
 
 @auth_bp.post("/forgot-password")
+@auth_limit
 def forgot_password():
     data = request.get_json(silent=True) or {}
     email = (data.get("email") or "").strip().lower()
@@ -174,6 +182,7 @@ def forgot_password():
 
 
 @auth_bp.post("/reset-password")
+@auth_limit
 def reset_password():
     data = request.get_json(silent=True) or {}
     token = data.get("token") or ""
@@ -196,6 +205,7 @@ def reset_password():
 
 
 @auth_bp.post("/verify-email")
+@auth_limit
 def verify_email():
     """Confirm an email/password account from the emailed link, then sign in."""
     data = request.get_json(silent=True) or {}
@@ -211,6 +221,7 @@ def verify_email():
 
 
 @auth_bp.post("/resend-verification")
+@auth_limit
 def resend_verification():
     """Re-send the confirmation email. Always responds the same way so it doesn't
     reveal whether an address is registered."""

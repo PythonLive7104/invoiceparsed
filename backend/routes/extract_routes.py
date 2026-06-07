@@ -106,10 +106,23 @@ def extract():
 
     # One request may carry several files. A single file is a normal extraction;
     # multiple files are treated as the pages of ONE invoice (multi-page) — a
-    # paid-only capability.
+    # paid-only capability. The client also tags batch uploads with mode=batch
+    # (one request per invoice) so we can gate that capability server-side.
     files = [f for f in request.files.getlist("file") if f and f.filename]
     if not files:
         return jsonify({"error": "No file provided."}), 400
+
+    mode = (request.form.get("mode") or "single").lower()
+
+    if mode == "batch" and not plan_allows(user.plan, "batch"):
+        return (
+            jsonify({
+                "error": "Batch upload is available on paid plans. Upgrade to process invoices in bulk.",
+                "code": "UPGRADE_REQUIRED",
+                "capability": "batch",
+            }),
+            402,
+        )
 
     if len(files) > 1 and not plan_allows(user.plan, "multiPage"):
         return (

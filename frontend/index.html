@@ -4,17 +4,69 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- SEO:START — replaced per-route by scripts/prerender.mjs at build time.
+         For app routes (not prerendered) this stays as the site-wide default
+         floor for crawlers that don't execute JS; React's <SEO/> refines it. -->
+    <title>InvoiceParsed — Turn any invoice into clean data in seconds</title>
     <meta
       name="description"
-      content="InvoiceParsed uses AI to extract structured data from invoices. Upload a PDF or image, get clean JSON or CSV in seconds."
+      content="InvoiceParsed is an AI invoice parser that extracts structured data from invoice PDFs and images in seconds. Export clean JSON or CSV."
     />
+    <meta name="robots" content="index,follow,max-image-preview:large" />
+    <meta property="og:site_name" content="InvoiceParsed" />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="InvoiceParsed — AI invoice data extraction" />
+    <meta
+      property="og:description"
+      content="Extract structured data from invoice PDFs and images in seconds. Export clean JSON or CSV."
+    />
+    <meta property="og:image" content="https://invoiceparsed.com/og/invoiceparsed-og.png" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:site" content="@invoiceparsed" />
+    <meta name="twitter:title" content="InvoiceParsed — AI invoice data extraction" />
+    <meta
+      name="twitter:description"
+      content="Extract structured data from invoice PDFs and images in seconds."
+    />
+    <meta name="twitter:image" content="https://invoiceparsed.com/og/invoiceparsed-og.png" />
+    <!-- SEO:END -->
+
+    <!-- Performance: warm up font + API origins early (Core Web Vitals). -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="preconnect" href="https://api.invoiceparsed.com" crossorigin />
     <link
       href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
       rel="stylesheet"
     />
-    <title>InvoiceParsed — Turn any invoice into clean data in seconds</title>
+
+    <!-- Site-wide structured data (Organization + WebSite), static so it's
+         visible without JS on every route. Page-level schema is added by React. -->
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@graph": [
+          {
+            "@type": "Organization",
+            "@id": "https://invoiceparsed.com/#organization",
+            "name": "InvoiceParsed",
+            "url": "https://invoiceparsed.com",
+            "logo": "https://invoiceparsed.com/logo-512.png",
+            "sameAs": [
+              "https://twitter.com/invoiceparsed",
+              "https://www.linkedin.com/company/invoiceparsed"
+            ]
+          },
+          {
+            "@type": "WebSite",
+            "@id": "https://invoiceparsed.com/#website",
+            "name": "InvoiceParsed",
+            "url": "https://invoiceparsed.com",
+            "publisher": { "@id": "https://invoiceparsed.com/#organization" }
+          }
+        ]
+      }
+    </script>
   </head>
   <body>
     <div id="root"></div>

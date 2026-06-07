@@ -13,7 +13,7 @@ from flask_cors import CORS
 from werkzeug.exceptions import RequestEntityTooLarge
 
 from config import Config
-from extensions import db
+from extensions import db, limiter
 from plans import PLANS, PLAN_ORDER
 from routes import auth_bp, billing_bp, extract_bp, keys_bp, webhook_bp
 
@@ -23,6 +23,9 @@ def create_app(config_class=Config) -> Flask:
     app.config.from_object(config_class)
 
     db.init_app(app)
+
+    # Rate limiting. Config keys (RATELIMIT_*) are read by Flask-Limiter directly.
+    limiter.init_app(app)
 
     # Allow the React frontend (configurable origins) to call the API.
     origins = [o.strip() for o in app.config["FRONTEND_ORIGIN"].split(",") if o.strip()]
@@ -47,6 +50,14 @@ def create_app(config_class=Config) -> Flask:
     @app.errorhandler(RequestEntityTooLarge)
     def too_large(_e):
         return jsonify({"error": "File exceeds the 10MB limit."}), 413
+
+    @app.errorhandler(429)
+    def rate_limited(e):
+        return jsonify({
+            "error": "Too many requests. Please slow down and try again shortly.",
+            "code": "RATE_LIMITED",
+            "detail": str(getattr(e, "description", "")),
+        }), 429
 
     @app.errorhandler(404)
     def not_found(_e):

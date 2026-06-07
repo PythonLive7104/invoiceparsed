@@ -20,6 +20,12 @@ import { Hero } from "@/components/marketing/Hero";
 import { Footer } from "@/components/marketing/Footer";
 import { Reveal } from "@/components/ui/Reveal";
 import { Button } from "@/components/ui/Button";
+import { SEO } from "@/components/seo/SEO";
+import { JsonLd } from "@/components/seo/JsonLd";
+import { FaqSection } from "@/components/seo/FaqSection";
+import { softwareApplicationSchema } from "@/lib/schema";
+import { SITE_FAQS } from "@/content/registry";
+import { PAGE_META } from "@/content/pages";
 import { PLANS, plansForSegment } from "@/lib/plans";
 import { cn } from "@/lib/utils";
 
@@ -63,8 +69,19 @@ export default function Landing() {
 
   return (
     <main className="relative">
+      <SEO title={PAGE_META["/"].title} description={PAGE_META["/"].description} path="/" />
+      <JsonLd data={softwareApplicationSchema()} />
+
       <MarketingNav />
       <Hero />
+
+      {/* Answer-first paragraph for AEO — visually subtle, crawler-visible. */}
+      <p className="container-page -mt-2 max-w-3xl pb-2 text-base leading-relaxed text-slate-400">
+        InvoiceParsed is an AI-powered invoice data extraction tool that turns
+        invoice PDFs and images into structured data — vendor, line items, tax and
+        totals — in seconds. Upload a file and export clean JSON or CSV, with a
+        confidence score on every field. No templates, no manual data entry.
+      </p>
 
       <section className="border-y border-white/[0.06] bg-white/[0.015] py-8">
         <div className="container-page grid grid-cols-2 gap-6 text-center sm:grid-cols-4">
@@ -354,6 +371,10 @@ export default function Landing() {
             </div>
           </Reveal>
         </div>
+      </section>
+
+      <section className="container-page py-16 sm:py-20">
+        <FaqSection faqs={SITE_FAQS} />
       </section>
 
       <Footer />

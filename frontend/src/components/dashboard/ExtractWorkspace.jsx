@@ -132,6 +132,7 @@ export function ExtractWorkspace() {
       try {
         const fd = new FormData();
         fd.append("file", files[i]);
+        fd.append("mode", "batch");
         const { data } = await api.post("/api/extract", fd, {
           onUploadProgress: (e) => {
             if (!e.total) return;
