@@ -11,10 +11,17 @@ RUN npm ci --legacy-peer-deps
 
 COPY . .
 
-# Empty = same-origin: the browser calls /api on this host and nginx proxies it
-# to the backend. Override at build time for a split frontend/API domain setup.
+# Vite bakes VITE_* vars at build time, so they must be passed as build args
+# (frontend/.env is .dockerignored). Empty VITE_API_URL = same-origin: the
+# browser calls /api on this host and nginx proxies it to the backend.
 ARG VITE_API_URL=""
-ENV VITE_API_URL=$VITE_API_URL
+ARG VITE_GOOGLE_CLIENT_ID=""
+ARG VITE_SENTRY_DSN=""
+ARG VITE_SENTRY_ENVIRONMENT="production"
+ENV VITE_API_URL=$VITE_API_URL \
+    VITE_GOOGLE_CLIENT_ID=$VITE_GOOGLE_CLIENT_ID \
+    VITE_SENTRY_DSN=$VITE_SENTRY_DSN \
+    VITE_SENTRY_ENVIRONMENT=$VITE_SENTRY_ENVIRONMENT
 RUN npm run build
 
 # ── Runtime stage ────────────────────────────────────────────────────────────

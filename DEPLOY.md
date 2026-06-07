@@ -100,9 +100,17 @@ Then `https://invoiceparsed.com` works, with HTTP auto-redirecting to HTTPS and
 `www` redirecting to the apex. Certificates are stored in the `caddy_data`
 volume and renew automatically — don't delete that volume.
 
-> Tip: persist the domain so you don't retype it. Create a root `.env` with
-> `SITE_DOMAIN=invoiceparsed.com` (Compose reads it automatically), then just run
-> `docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build`.
+> Tip: persist these in a root `.env` (Compose reads it automatically), then just
+> run `docker compose up -d --build`:
+> ```
+> COMPOSE_FILE=docker-compose.yml:docker-compose.prod.yml
+> SITE_DOMAIN=invoiceparsed.com
+> # Build-time frontend vars (Vite bakes them in; frontend/.env is NOT used by Docker):
+> VITE_GOOGLE_CLIENT_ID=xxxxx.apps.googleusercontent.com   # required for the Google button to show
+> VITE_SENTRY_DSN=                                          # optional (frontend error monitoring)
+> ```
+> ⚠️ After changing any `VITE_*` value you must **rebuild** (`--build`) — they're
+> compiled into the static bundle, not read at runtime.
 
 **Alternative (no server TLS): Cloudflare.** Put the domain behind Cloudflare and
 set SSL mode to Full — TLS terminates at Cloudflare with zero server changes.
@@ -116,6 +124,16 @@ Because the app is now same-origin, update your Google Cloud OAuth client:
 - **Authorized redirect URIs:** `https://invoiceparsed.com/api/auth/google/callback`
 
 (Plus `http://localhost:5173` / `http://localhost:5000/...` for local dev.)
+
+## 6b. Error monitoring (Sentry) — optional
+
+Create a project at sentry.io (one "Python/Flask" + one "React"), then:
+
+- `backend/.env`: set `SENTRY_DSN=` to the backend DSN.
+- Root compose `.env`: set `VITE_SENTRY_DSN=` to the frontend DSN, then rebuild
+  (`docker compose up -d --build`).
+
+Both stay disabled when their DSN is blank, so dev/tests never report.
 
 ## 6. Dodo Payments (when ready)
 

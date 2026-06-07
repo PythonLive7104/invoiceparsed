@@ -47,6 +47,11 @@ class Config:
     RESEND_API_KEY = os.getenv("RESEND_API_KEY", "")
     RESEND_FROM = os.getenv("RESEND_FROM", "InvoiceParsed <onboarding@resend.dev>")
 
+    # Sentry error monitoring. Leave SENTRY_DSN blank to disable (dev/tests).
+    SENTRY_DSN = os.getenv("SENTRY_DSN", "")
+    SENTRY_ENVIRONMENT = os.getenv("SENTRY_ENVIRONMENT", "production")
+    SENTRY_TRACES_SAMPLE_RATE = float(os.getenv("SENTRY_TRACES_SAMPLE_RATE", "0.0"))
+
     # Dodo Payments. Leave DODO_API_KEY blank to run billing in demo mode (plan
     # changes apply instantly, no real payment). Set all values for production.
     DODO_API_KEY = os.getenv("DODO_API_KEY", "")

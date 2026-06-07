@@ -19,7 +19,26 @@ from plans import PLANS, PLAN_ORDER
 from routes import auth_bp, billing_bp, extract_bp, keys_bp, webhook_bp
 
 
+def _init_sentry(config_class) -> None:
+    """Start Sentry error monitoring if a DSN is configured (no-op otherwise)."""
+    dsn = getattr(config_class, "SENTRY_DSN", "")
+    if not dsn:
+        return
+    import sentry_sdk
+    from sentry_sdk.integrations.flask import FlaskIntegration
+
+    sentry_sdk.init(
+        dsn=dsn,
+        integrations=[FlaskIntegration()],
+        environment=getattr(config_class, "SENTRY_ENVIRONMENT", "production"),
+        traces_sample_rate=getattr(config_class, "SENTRY_TRACES_SAMPLE_RATE", 0.0),
+        send_default_pii=False,  # don't ship user emails/IPs to Sentry
+    )
+
+
 def create_app(config_class=Config) -> Flask:
+    _init_sentry(config_class)
+
     app = Flask(__name__)
     app.config.from_object(config_class)
 

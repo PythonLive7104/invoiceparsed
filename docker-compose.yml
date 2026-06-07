@@ -29,6 +29,11 @@ services:
       args:
         # Same-origin: the SPA calls /api on this host; nginx proxies to backend.
         VITE_API_URL: ""
+        # MUST be set for the "Continue with Google" button to render (Vite bakes
+        # it at build time). Put it in the root .env that Compose reads.
+        VITE_GOOGLE_CLIENT_ID: ${VITE_GOOGLE_CLIENT_ID:-}
+        VITE_SENTRY_DSN: ${VITE_SENTRY_DSN:-}
+        VITE_SENTRY_ENVIRONMENT: ${VITE_SENTRY_ENVIRONMENT:-production}
     restart: unless-stopped
     ports:
       - "80:80"
