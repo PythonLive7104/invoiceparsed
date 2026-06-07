@@ -1,0 +1,39 @@
+# InvoiceParsed — production compose.
+#
+#   docker compose up -d --build
+#
+# The database (Supabase), OpenAI and Resend are external services, so only two
+# containers run here: the Flask API and an nginx that serves the SPA and
+# reverse-proxies /api to the API. Secrets come from backend/.env.
+
+services:
+  backend:
+    build: ./backend
+    env_file:
+      - ./backend/.env
+    restart: unless-stopped
+    expose:
+      - "5000"
+    volumes:
+      - uploads:/app/uploads
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:5000/api/health').status==200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  web:
+    build:
+      context: ./frontend
+      args:
+        # Same-origin: the SPA calls /api on this host; nginx proxies to backend.
+        VITE_API_URL: ""
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+
+volumes:
+  uploads:

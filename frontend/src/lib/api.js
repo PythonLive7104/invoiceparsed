@@ -1,6 +1,8 @@
 import axios from "axios";
 
-const BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
+// VITE_API_URL set to "" → same-origin (nginx proxies /api to the backend in
+// the Docker deploy). Unset (dev) → talk to the local Flask server directly.
+const BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:5000";
 
 const TOKEN_KEY = "ia_token";
 

@@ -16,6 +16,7 @@ class TestConfig(Config):
     SQLALCHEMY_ENGINE_OPTIONS = {}
     RATELIMIT_ENABLED = False
     RATELIMIT_STORAGE_URI = "memory://"
+    TRUST_PROXY = False
     JWT_SECRET = "test-secret-key"
     OPENAI_API_KEY = "test-openai-key"
     RESEND_API_KEY = ""  # _send() short-circuits when empty

@@ -18,7 +18,9 @@ import { useAuth } from "@/lib/auth.jsx";
 import { planAllows } from "@/lib/plans";
 import { cn, formatDate } from "@/lib/utils";
 
-const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
+// "" → same-origin (Docker deploy) → show the current site origin in docs/curl.
+const API_BASE = import.meta.env.VITE_API_URL ?? "http://localhost:5000";
+const API_URL = API_BASE || (typeof window !== "undefined" ? window.location.origin : "");
 
 export default function ApiSettings() {
   const { user } = useAuth();

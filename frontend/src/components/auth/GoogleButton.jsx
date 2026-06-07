@@ -1,7 +1,10 @@
 import { useEffect, useRef } from "react";
 
 const CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID;
-const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
+// "" → same-origin (Docker deploy); unset → local dev server. The Google
+// redirect login_uri must be ABSOLUTE, so empty resolves to the current origin.
+const API_BASE = import.meta.env.VITE_API_URL ?? "http://localhost:5000";
+const API_ORIGIN = API_BASE || (typeof window !== "undefined" ? window.location.origin : "");
 
 /** Whether Google sign-in is configured (controls divider/visibility). */
 export const googleEnabled = Boolean(CLIENT_ID);
@@ -42,7 +45,7 @@ export function GoogleButton() {
         window.google.accounts.id.initialize({
           client_id: CLIENT_ID,
           ux_mode: "redirect",
-          login_uri: `${API_URL}/api/auth/google/callback`,
+          login_uri: `${API_ORIGIN}/api/auth/google/callback`,
         });
         window.google.accounts.id.renderButton(ref.current, {
           theme: "filled_black",

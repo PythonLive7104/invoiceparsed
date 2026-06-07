@@ -11,6 +11,7 @@ import os
 from flask import Flask, jsonify
 from flask_cors import CORS
 from werkzeug.exceptions import RequestEntityTooLarge
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 from config import Config
 from extensions import db, limiter
@@ -21,6 +22,12 @@ from routes import auth_bp, billing_bp, extract_bp, keys_bp, webhook_bp
 def create_app(config_class=Config) -> Flask:
     app = Flask(__name__)
     app.config.from_object(config_class)
+
+    # Behind nginx/the VPS reverse proxy: trust one hop of X-Forwarded-* so
+    # request.remote_addr is the real client IP (correct rate-limiting) and
+    # generated URLs use the external scheme/host.
+    if app.config.get("TRUST_PROXY", True):
+        app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
 
     db.init_app(app)
 

@@ -28,6 +28,10 @@ class Config:
     OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
     OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o")
 
+    # Trust one hop of X-Forwarded-* headers (true when running behind nginx /
+    # a reverse proxy, as in the Docker deploy). Disable if exposed directly.
+    TRUST_PROXY = os.getenv("TRUST_PROXY", "true").lower() == "true"
+
     # CORS — comma-separated list of allowed frontend origins
     FRONTEND_ORIGIN = os.getenv("FRONTEND_ORIGIN", "http://localhost:5173")
 
