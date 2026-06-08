@@ -5,6 +5,7 @@ import { Footer } from "@/components/marketing/Footer";
 import { SEO } from "@/components/seo/SEO";
 import { JsonLd } from "@/components/seo/JsonLd";
 import { FaqSection } from "@/components/seo/FaqSection";
+import { ArticleBody } from "@/components/blog/ArticleBody";
 import { articleSchema, breadcrumbSchema, faqPageSchema } from "@/lib/schema";
 import { formatDate } from "@/lib/utils";
 
@@ -106,7 +107,7 @@ export function ArticleLayout({ post, kind = "blog", children }) {
         )}
 
         <div className="prose-invoice mt-8 space-y-5 text-base leading-relaxed text-slate-300">
-          {children}
+          {post.content?.length ? <ArticleBody blocks={post.content} /> : children}
         </div>
 
         {post.faqs?.length > 0 && (

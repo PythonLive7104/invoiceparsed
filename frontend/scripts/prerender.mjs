@@ -41,6 +41,35 @@ const template = readFileSync(resolve(DIST, "index.html"), "utf8");
 const esc = (s = "") =>
   String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
+/** Render registry content blocks to static HTML (mirrors ArticleBody.jsx). */
+function blocksToHtml(blocks = []) {
+  return blocks
+    .map((b) => {
+      if (b.h2) return `<h2>${esc(b.h2)}</h2>`;
+      if (b.p) return `<p>${esc(b.p)}</p>`;
+      if (b.ul) return `<ul>${b.ul.map((li) => `<li>${esc(li)}</li>`).join("")}</ul>`;
+      if (b.ol) return `<ol>${b.ol.map((li) => `<li>${esc(li)}</li>`).join("")}</ol>`;
+      return "";
+    })
+    .join("\n");
+}
+
+/** Full crawler-visible article HTML (title, intro, body, FAQ) injected into #root. */
+function articleHtml(post) {
+  const faq = post.faqs?.length
+    ? `<section><h2>Frequently asked questions</h2>${post.faqs
+        .map((f) => `<h3>${esc(f.q)}</h3><p>${esc(f.a)}</p>`)
+        .join("")}</section>`
+    : "";
+  return (
+    `<article><h1>${esc(post.title)}</h1>` +
+    (post.excerpt ? `<p>${esc(post.excerpt)}</p>` : "") +
+    blocksToHtml(post.content) +
+    faq +
+    `</article>`
+  );
+}
+
 const KIND = {
   blog: { label: "Blog", base: "/blog" },
   compare: { label: "Compare", base: "/compare" },
@@ -107,6 +136,7 @@ function pages() {
       image: post.image || SITE.ogImage,
       type: "article",
       schemas,
+      bodyHtml: articleHtml(post),
     });
   }
   return out;
@@ -147,6 +177,11 @@ function render(page) {
     .map((s) => `<script type="application/ld+json">${JSON.stringify(s)}</script>`)
     .join("\n    ");
   if (ld) html = html.replace("</head>", `    ${ld}\n  </head>`);
+  // Inject crawler-visible article content into the SPA mount point. React
+  // (createRoot) replaces it on hydration, so users still get the full app.
+  if (page.bodyHtml) {
+    html = html.replace('<div id="root"></div>', `<div id="root">${page.bodyHtml}</div>`);
+  }
   return html;
 }
 
