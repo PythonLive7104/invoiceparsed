@@ -11,6 +11,13 @@ class Config:
     # Auth
     JWT_SECRET = os.getenv("JWT_SECRET", "change-me")
     JWT_EXP_DAYS = 30
+    # Flask session/CSRF secret (used by Flask-Admin forms). Reuses JWT_SECRET.
+    SECRET_KEY = os.getenv("SECRET_KEY") or os.getenv("JWT_SECRET", "change-me")
+
+    # Flask-Admin (/admin). Protected by HTTP Basic Auth with these credentials.
+    # Leave either blank to disable the admin entirely.
+    ADMIN_USER = os.getenv("ADMIN_USER", "")
+    ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "")
 
     # Database — prefer the Supabase Postgres pooler if set, else DATABASE_URL,
     # else local SQLite. SQLAlchemy needs the "postgresql://" scheme (Supabase

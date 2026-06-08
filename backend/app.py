@@ -66,6 +66,10 @@ def create_app(config_class=Config) -> Flask:
     app.register_blueprint(keys_bp)
     app.register_blueprint(webhook_bp)
 
+    # Flask-Admin at /admin (no-op unless ADMIN_USER/ADMIN_PASSWORD are set).
+    from admin import init_admin
+    init_admin(app)
+
     @app.get("/api/health")
     def health():
         return jsonify({"status": "ok", "openai_configured": bool(app.config["OPENAI_API_KEY"])})
