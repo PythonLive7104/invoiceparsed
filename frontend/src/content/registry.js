@@ -46,6 +46,29 @@ export const BLOG_POSTS = [
     ],
   },
   {
+    slug: "extract-data-from-receipts",
+    title: "How to Extract Data From Receipts (2026 Guide)",
+    description:
+      "Learn how to extract data from receipts automatically with AI — turn photos and PDFs into structured expense data (merchant, date, tax, tip, total) in seconds.",
+    excerpt:
+      "To extract data from a receipt, upload a photo or PDF to an AI receipt parser like InvoiceParsed, which reads the document and returns structured fields — merchant, date, payment method, category, tax, tip and total — as JSON or a QuickBooks-compatible CSV in seconds.",
+    author: "InvoiceParsed Team",
+    datePublished: "2026-06-08",
+    dateModified: "2026-06-08",
+    image: "/og/blog/extract-invoice-pdf.png",
+    tags: ["receipt OCR", "expenses", "automation"],
+    faqs: [
+      {
+        q: "What is receipt OCR?",
+        a: "Receipt OCR converts the text on a receipt image or PDF into machine-readable data. AI receipt parsers go further, labelling that text into structured fields like merchant, tax, tip and total.",
+      },
+      {
+        q: "Can AI categorize receipts for expenses?",
+        a: "Yes. InvoiceParsed infers a best-guess expense category (e.g. Meals, Travel, Fuel) for each receipt, which you can review and export.",
+      },
+    ],
+  },
+  {
     slug: "best-invoice-ocr-tools",
     title: "7 Best Invoice OCR Tools in 2026 (Compared)",
     description:
@@ -118,6 +141,29 @@ export const USE_CASES = [
       {
         q: "Can freelancers use InvoiceParsed for free?",
         a: "Yes. The free plan covers 5 invoices per month, which is enough for many solo freelancers to handle monthly bookkeeping.",
+      },
+    ],
+  },
+  {
+    slug: "receipts",
+    title: "Receipt Data Extraction & OCR",
+    description:
+      "Extract data from receipts automatically with AI. Snap a photo or upload a PDF and get merchant, date, tax, tip and total as JSON or CSV for expenses.",
+    excerpt:
+      "InvoiceParsed extracts data from receipts using AI — upload a photo or PDF and it returns the merchant, date, payment method, category, tax, tip and total as structured data you can export to a QuickBooks-compatible CSV. Ideal for expense tracking and reimbursements.",
+    dateModified: "2026-06-08",
+    faqs: [
+      {
+        q: "Can I extract data from a photo of a receipt?",
+        a: "Yes. InvoiceParsed reads phone photos of receipts as well as scans and PDFs, returning structured fields with a confidence score on each.",
+      },
+      {
+        q: "What does receipt extraction capture?",
+        a: "Merchant name and address, date, payment method, a best-guess expense category, line items, subtotal, tax, tip and total — exported as JSON or an expense/QuickBooks-friendly CSV.",
+      },
+      {
+        q: "Is receipt scanning free?",
+        a: "Yes — the free plan includes 5 documents per month (invoices or receipts) with no credit card required.",
       },
     ],
   },
