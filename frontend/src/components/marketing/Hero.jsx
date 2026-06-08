@@ -91,7 +91,7 @@ export function Hero() {
           transition={{ duration: 0.8, delay: 0.2, ease: [0.22, 1, 0.36, 1] }}
           className="relative"
         >
-          <div className="relative mx-auto grid max-w-md grid-cols-[1fr_auto_1fr] items-center gap-3 sm:max-w-none">
+          <div className="relative mx-auto flex max-w-md flex-col items-stretch gap-3 sm:grid sm:max-w-none sm:grid-cols-[1fr_auto_1fr] sm:items-center">
             <div className="glass animate-float rounded-2xl p-4 [animation-delay:-1s]">
               <div className="flex items-center gap-2 text-slate-400">
                 <FileText size={16} />
@@ -129,7 +129,7 @@ export function Hero() {
                 <span className="h-2.5 w-2.5 rounded-full bg-emerald-400/70" />
                 <span className="ml-2 text-[11px] text-slate-500">output.json</span>
               </div>
-              <pre className="overflow-hidden p-4 font-mono text-[11px] leading-relaxed sm:text-xs">
+              <pre className="overflow-x-auto whitespace-pre-wrap break-words p-4 font-mono text-[11px] leading-relaxed sm:text-xs">
                 {jsonLines.map((line, i) => (
                   <motion.div
                     key={i}

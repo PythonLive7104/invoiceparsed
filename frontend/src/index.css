@@ -15,6 +15,11 @@
   }
   body {
     margin: 0;
+    /* clip (not hidden) avoids creating a scroll container that would break
+       position: sticky / anchor scrolling, while still stopping mobile
+       horizontal overflow. */
+    overflow-x: clip;
+    max-width: 100%;
     background-color: #070a13;
     color: #e2e8f0;
     font-family: "Inter", system-ui, sans-serif;
