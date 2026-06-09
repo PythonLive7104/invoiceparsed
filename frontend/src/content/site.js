@@ -10,7 +10,7 @@ export const SITE = {
   twitter: "@invoiceparsed",
   locale: "en_US",
   description:
-    "InvoiceParsed is an AI invoice parser that extracts structured data from invoice PDFs and images in seconds — export clean JSON or CSV.",
+    "InvoiceParsed is an AI parser that extracts data from invoices, receipts and bank statements (PDF or image) in seconds — export clean CSV or JSON.",
   // Used by Organization schema.
   logo: "https://invoiceparsed.com/logo-512.png",
   sameAs: [

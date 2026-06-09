@@ -64,6 +64,24 @@ def test_multipage_blocked_on_free(client, app, monkeypatch):
     assert r.get_json()["capability"] == "multiPage"
 
 
+def test_multipage_allowed_on_paid_plans(client, app, monkeypatch):
+    """Starter/Pro/Business can combine multiple files into ONE invoice."""
+    _stub_extract(monkeypatch)
+    for plan in ("starter", "pro", "business"):
+        user = make_user(app, email=f"{plan}-mp@example.com", plan=plan)
+        r = client.post(
+            "/api/extract",
+            data={"file": [_file("p1.png"), _file("p2.png"), _file("p3.png")]},
+            headers=auth_header(app, user),
+            content_type="multipart/form-data",
+        )
+        assert r.status_code == 200, plan
+        body = r.get_json()
+        # Multiple uploads merged into a single extraction record.
+        assert body["invoice"]["vendor"]["name"] == "Acme"
+        assert "(+2 pages)" in body["fileName"]  # 3 files → primary + 2 more
+
+
 FAKE_RECEIPT = {
     "merchant": {"name": "Cafe Roma", "address": "5 High St"},
     "receipt_date": "2026-02-01", "receipt_number": "R-9", "payment_method": "Visa ****1234",

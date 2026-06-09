@@ -6,7 +6,7 @@ export const PAGE_META = {
   "/": {
     title: "AI invoice data extraction software",
     description:
-      "InvoiceParsed is an AI invoice parser that extracts data from invoice PDFs and images in seconds. Export clean JSON or CSV. Free plan, no card.",
+      "AI parser for invoices, receipts and bank statements. Turn a PDF or image into clean structured data — export CSV or JSON in seconds. Free plan.",
     schema: ["software", "faq"],
   },
   "/pricing": {
