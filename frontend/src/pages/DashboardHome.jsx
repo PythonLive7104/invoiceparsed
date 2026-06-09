@@ -39,9 +39,11 @@ export default function DashboardHome() {
       </div>
 
       <div className="grid gap-6 lg:grid-cols-[1fr_300px]">
-        <ExtractWorkspace />
+        <div className="min-w-0">
+          <ExtractWorkspace />
+        </div>
 
-        <aside className="space-y-4">
+        <aside className="min-w-0 space-y-4">
           <UsageMeter usage={usage} />
 
           <div className="glass rounded-2xl p-5">
