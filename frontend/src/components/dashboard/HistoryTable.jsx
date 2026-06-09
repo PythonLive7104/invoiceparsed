@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { Search, FileText, Receipt, Landmark, Download, Trash2, Eye, Inbox, AlertCircle } from "lucide-react";
+import { Search, FileText, Receipt, Landmark, Download, Sheet, Trash2, Eye, Inbox, AlertCircle } from "lucide-react";
 
 const DOC_META = {
   receipt: { label: "Receipt", Icon: Receipt },
@@ -146,6 +146,18 @@ export function HistoryTable({ initialItems }) {
                               title="Download CSV"
                             >
                               <Download size={15} />
+                            </button>
+                            <button
+                              onClick={() =>
+                                downloadFile(
+                                  `/api/extractions/${it.id}/xlsx`,
+                                  `${it.invoiceNumber || it.vendorName || "invoice"}.xlsx`,
+                                )
+                              }
+                              className="grid h-8 w-8 place-items-center rounded-lg text-slate-400 transition-colors hover:bg-white/[0.06] hover:text-white"
+                              title="Download Excel"
+                            >
+                              <Sheet size={15} />
                             </button>
                           </>
                         )}

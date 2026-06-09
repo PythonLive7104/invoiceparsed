@@ -381,11 +381,11 @@ export const PRICING_FAQS = [
 
 // Site-wide FAQ shown on / and /faq (also rendered as FAQPage JSON-LD).
 export const SITE_FAQS = [
-  { q: "What is InvoiceParsed?", a: "InvoiceParsed is an AI-powered invoice and receipt data extraction tool. You upload a PDF or image and it returns structured data — vendor, line items, tax and totals — as JSON or CSV in seconds." },
+  { q: "What is InvoiceParsed?", a: "InvoiceParsed is an AI-powered tool that extracts data from invoices, receipts and bank statements. Upload a PDF or image and it returns structured data — vendor, line items, tax and totals — as Excel, CSV or JSON in seconds." },
   { q: "How accurate is AI invoice extraction?", a: "InvoiceParsed returns a confidence score (0–100%) for every field, so you can review low-confidence values. Accuracy is highest on clear digital PDFs and remains strong on photos and scans." },
   { q: "Which file formats are supported?", a: "PDF, JPG and PNG files up to 10MB each. Multi-page PDFs and multi-file documents are supported on paid plans." },
   { q: "Is there a free plan?", a: "Yes — the free plan includes 5 documents per month with no credit card required." },
-  { q: "Does InvoiceParsed work with QuickBooks?", a: "Yes. Every extraction can be exported as a QuickBooks-compatible CSV with bill/invoice columns (Bill No, Bill Date, Due Date, Terms, line-item Description/Qty/Rate/Amount, tax and total) that map cleanly in QuickBooks Online's CSV import. You can also export structured JSON or use the API." },
+  { q: "What export formats are supported?", a: "Every extraction exports as an Excel (.xlsx) workbook, a QuickBooks-compatible CSV (bill/invoice columns like Bill No, Bill Date, Terms, line items, tax and total that map cleanly in QuickBooks' CSV import), or structured JSON — and you can also pull data via the REST API." },
 ];
 
 /** Build the full list of sitemap entries from the registry. */

@@ -90,6 +90,12 @@ export function InvoiceCard({ invoice: initial, extractionId, fileName, initialS
     downloadFile(`/api/extractions/${extractionId}/csv`, name);
   }
 
+  function downloadXlsx() {
+    if (!extractionId) return;
+    const name = `${invoice.invoice_number || invoice.vendor?.name || "invoice"}.xlsx`;
+    downloadFile(`/api/extractions/${extractionId}/xlsx`, name);
+  }
+
   function updateLine(idx, patch) {
     setInvoice((inv) => ({
       ...inv,
@@ -165,8 +171,13 @@ export function InvoiceCard({ invoice: initial, extractionId, fileName, initialS
                 <Download size={14} /> JSON
               </Button>
               {extractionId && (
-                <Button size="sm" onClick={downloadCsv}>
+                <Button size="sm" variant="secondary" onClick={downloadCsv}>
                   <Download size={14} /> CSV
+                </Button>
+              )}
+              {extractionId && (
+                <Button size="sm" onClick={downloadXlsx}>
+                  <Download size={14} /> Excel
                 </Button>
               )}
             </>

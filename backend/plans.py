@@ -19,7 +19,7 @@ PLANS = {
         "features": [
             "5 invoices / month",
             "PDF & image upload",
-            "QuickBooks-compatible CSV + JSON",
+            "Excel, CSV & JSON export",
             "Extraction history",
         ],
     },
@@ -40,7 +40,7 @@ PLANS = {
             "100 invoices / month",
             "Multi-file batch upload",
             "Multi-page invoices",
-            "QuickBooks-compatible CSV + JSON",
+            "Excel, CSV & JSON export",
             "Email support",
         ],
     },
@@ -78,7 +78,7 @@ PLANS = {
         "statements": True,
         "features": [
             "Everything in Pro",
-            "Bank statement extraction (beta)",
+            "Bank statement extraction",
             "High-volume processing",
             "Centralized billing & invoicing",
             "Priority support + onboarding",

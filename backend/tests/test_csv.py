@@ -2,7 +2,10 @@
 import csv
 import io
 
-from csv_util import invoice_to_csv, receipt_to_csv, HEADERS, RECEIPT_HEADERS
+import openpyxl
+
+from csv_util import invoice_to_csv, receipt_to_csv, HEADERS, RECEIPT_HEADERS, STATEMENT_HEADERS
+from xlsx_util import document_to_xlsx
 
 
 def _invoice():
@@ -53,3 +56,29 @@ def test_receipt_csv_has_expense_columns():
     assert {"Merchant", "Payment Method", "Category", "Tip"} <= set(RECEIPT_HEADERS)
     assert rows[1][RECEIPT_HEADERS.index("Merchant")] == "Cafe"
     assert rows[1][RECEIPT_HEADERS.index("Tip")] == "1.5"
+
+
+def test_xlsx_export_valid_for_all_doc_types():
+    inv = _invoice()
+    receipt = {
+        "merchant": {"name": "Cafe", "address": None}, "receipt_date": "2026-02-01",
+        "receipt_number": "R1", "payment_method": "Cash", "category": "Meals", "currency": "USD",
+        "line_items": [{"description": "Latte", "quantity": 1, "unit_price": 4, "amount": 4}],
+        "subtotal": 4, "tax": 0.4, "tip": 1, "total": 5.4,
+    }
+    statement = {
+        "transactions": [
+            {"date": "2026-05-08", "description": "Airtime", "debit": 84, "credit": None, "balance": 0, "reference": "A1"},
+        ],
+    }
+    cases = {
+        "invoice": (inv, HEADERS),
+        "receipt": (receipt, RECEIPT_HEADERS),
+        "statement": (statement, STATEMENT_HEADERS),
+    }
+    for doc_type, (data, headers) in cases.items():
+        blob = document_to_xlsx(doc_type, data)
+        assert blob[:2] == b"PK", doc_type  # .xlsx is a zip archive
+        wb = openpyxl.load_workbook(io.BytesIO(blob))
+        ws = wb.active
+        assert [c.value for c in ws[1]] == headers, doc_type

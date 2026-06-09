@@ -104,6 +104,10 @@ export function ReceiptCard({ invoice: initial, extractionId, fileName, initialS
     if (!extractionId) return;
     downloadFile(`/api/extractions/${extractionId}/csv`, `${receipt.merchant?.name || "receipt"}.csv`);
   }
+  function downloadXlsx() {
+    if (!extractionId) return;
+    downloadFile(`/api/extractions/${extractionId}/xlsx`, `${receipt.merchant?.name || "receipt"}.xlsx`);
+  }
 
   return (
     <div className="glass overflow-hidden rounded-2xl">
@@ -168,8 +172,13 @@ export function ReceiptCard({ invoice: initial, extractionId, fileName, initialS
                 <Download size={14} /> JSON
               </Button>
               {extractionId && (
-                <Button size="sm" onClick={downloadCsv}>
+                <Button size="sm" variant="secondary" onClick={downloadCsv}>
                   <Download size={14} /> CSV
+                </Button>
+              )}
+              {extractionId && (
+                <Button size="sm" onClick={downloadXlsx}>
+                  <Download size={14} /> Excel
                 </Button>
               )}
             </>

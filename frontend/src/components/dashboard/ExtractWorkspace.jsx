@@ -54,7 +54,7 @@ export function ExtractWorkspace() {
   const atLimit = usage?.atLimit;
   const docLabel = { receipt: "receipt", statement: "bank statement" }[docType] || "invoice";
   const docArticle = docType === "invoice" ? "an" : "a";
-  // Bank statements are Business-only (beta). Block upload when selected without it.
+  // Bank statements are a Business-only feature. Block upload when selected without it.
   const statementLocked = docType === "statement" && !canStatements;
   const blocked = atLimit || statementLocked;
 
@@ -613,7 +613,7 @@ function StatementLockBanner() {
       <p className="flex items-start gap-2.5 text-sm text-brand-100">
         <Lock size={16} className="mt-0.5 shrink-0" />
         <span>
-          Bank statement extraction is a <span className="font-semibold">Business</span> plan feature (beta).
+          Bank statement extraction is a <span className="font-semibold">Business</span> plan feature.
         </span>
       </p>
       <Button size="sm" to="/dashboard/billing">

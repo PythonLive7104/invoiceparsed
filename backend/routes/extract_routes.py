@@ -10,6 +10,7 @@ from werkzeug.utils import secure_filename
 from auth import api_or_login_required
 from config import Config
 from csv_util import invoice_to_csv, receipt_to_csv, statement_to_csv
+from xlsx_util import document_to_xlsx
 from extensions import db
 from invoice_schema import normalize as normalize_invoice
 from receipt_schema import normalize as normalize_receipt
@@ -31,6 +32,12 @@ _CSV_WRITERS = {"invoice": invoice_to_csv, "receipt": receipt_to_csv, "statement
 
 def _normalize_for(doc_type: str):
     return _NORMALIZERS.get(doc_type, normalize_invoice)
+
+
+def _safe_name(row) -> str:
+    """Filesystem-safe base name for an export download."""
+    raw = row.invoice_number or row.vendor_name or row.id
+    return "".join(c if c.isalnum() or c in "-_" else "_" for c in raw)
 
 
 def _count_usage(user: User) -> int:
@@ -330,9 +337,24 @@ def download_csv(eid):
 
     data = json.loads(row.data)
     csv_text = _CSV_WRITERS.get(row.doc_type, invoice_to_csv)(data)
-    safe = "".join(c if c.isalnum() or c in "-_" else "_" for c in (row.invoice_number or row.vendor_name or row.id))
     return Response(
         csv_text,
         mimetype="text/csv",
-        headers={"Content-Disposition": f'attachment; filename="{safe}.csv"'},
+        headers={"Content-Disposition": f'attachment; filename="{_safe_name(row)}.csv"'},
+    )
+
+
+@extract_bp.get("/extractions/<eid>/xlsx")
+@api_or_login_required
+def download_xlsx(eid):
+    row = Extraction.query.filter_by(id=eid, user_id=g.user.id).first()
+    if row is None or row.status != "completed":
+        return jsonify({"error": "Extraction not found."}), 404
+
+    data = json.loads(row.data)
+    content = document_to_xlsx(row.doc_type, data)
+    return Response(
+        content,
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{_safe_name(row)}.xlsx"'},
     )

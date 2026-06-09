@@ -51,7 +51,7 @@ const audiences = [
 const features = [
   { icon: ScanLine, title: "Field-perfect extraction", desc: "Vendor, invoice number, dates, line items, subtotal, tax and total — every field, captured accurately." },
   { icon: Layers, title: "PDF & image, any layout", desc: "Upload PDFs or photos. Handles messy scans, multi-page invoices and unusual layouts." },
-  { icon: FileJson, title: "QuickBooks-compatible export", desc: "One click to a strict JSON payload or a QuickBooks-compatible CSV that maps straight into your accounting software." },
+  { icon: FileJson, title: "Excel, CSV & JSON export", desc: "One click to an Excel (.xlsx) workbook, a QuickBooks-compatible CSV, or a strict JSON payload — straight into your accounting software." },
   { icon: Gauge, title: "95%+ accuracy", desc: "Tuned prompts and structured outputs keep extraction reliable on standard invoice formats." },
   { icon: Clock, title: "Seconds, not hours", desc: "What took a bookkeeper 6 hours a week now happens the moment you drop a file." },
   { icon: ShieldCheck, title: "Private by design", desc: "Your documents are processed for extraction only — no training, no resale of your data." },
@@ -77,11 +77,11 @@ export default function Landing() {
 
       {/* Answer-first paragraph for AEO — visually subtle, crawler-visible. */}
       <p className="container-page -mt-2 max-w-3xl pb-2 text-base leading-relaxed text-slate-400">
-        InvoiceParsed is an AI-powered invoice and receipt data extraction tool
-        that turns invoice or receipt PDFs and images into structured data —
-        vendor, line items, tax and totals — in seconds. Upload a file and export
-        a QuickBooks-compatible CSV or JSON, with a confidence score on every
-        field. No templates, no manual data entry.
+        InvoiceParsed is an AI-powered tool that extracts data from invoices,
+        receipts and bank statements — turning a PDF or image into structured
+        data (vendor, line items, tax and totals) in seconds. Upload a file and
+        export to Excel, a QuickBooks-compatible CSV, or JSON, with a confidence
+        score on every field. No templates, no manual data entry.
       </p>
 
       <section className="border-y border-white/[0.06] bg-white/[0.015] py-8">

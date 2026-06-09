@@ -31,7 +31,7 @@ export function Hero() {
             className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-3.5 py-1.5 text-xs font-medium text-slate-300"
           >
             <Sparkles size={14} className="text-accent-cyan" />
-            Powered by OpenAI vision models
+            AI extraction for invoices, receipts &amp; statements
           </motion.div>
 
           <motion.h1

@@ -46,6 +46,10 @@ export function StatementCard({ invoice: stmt, extractionId, fileName, initialSh
     if (!extractionId) return;
     downloadFile(`/api/extractions/${extractionId}/csv`, `${stmt.account_holder || "statement"}.csv`);
   }
+  function downloadXlsx() {
+    if (!extractionId) return;
+    downloadFile(`/api/extractions/${extractionId}/xlsx`, `${stmt.account_holder || "statement"}.xlsx`);
+  }
 
   const period = [stmt.period_start, stmt.period_end].filter(Boolean).join(" – ") || "—";
 
@@ -91,8 +95,13 @@ export function StatementCard({ invoice: stmt, extractionId, fileName, initialSh
             <Download size={14} /> JSON
           </Button>
           {extractionId && (
-            <Button size="sm" onClick={downloadCsv}>
+            <Button size="sm" variant="secondary" onClick={downloadCsv}>
               <Download size={14} /> CSV
+            </Button>
+          )}
+          {extractionId && (
+            <Button size="sm" onClick={downloadXlsx}>
+              <Download size={14} /> Excel
             </Button>
           )}
         </div>

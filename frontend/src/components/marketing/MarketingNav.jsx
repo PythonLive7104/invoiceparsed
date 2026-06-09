@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Menu, X } from "lucide-react";
 import { Logo } from "@/components/ui/Logo";
 import { Button } from "@/components/ui/Button";
+import { useAuth } from "@/lib/auth.jsx";
 import { cn } from "@/lib/utils";
 
 const links = [
@@ -12,6 +13,7 @@ const links = [
 ];
 
 export function MarketingNav() {
+  const { user } = useAuth();
   const [scrolled, setScrolled] = useState(false);
   const [open, setOpen] = useState(false);
 
@@ -47,12 +49,20 @@ export function MarketingNav() {
         </div>
 
         <div className="hidden items-center gap-2 md:flex">
-          <Button to="/login" variant="ghost" size="sm">
-            Sign in
-          </Button>
-          <Button to="/signup" size="sm">
-            Start free
-          </Button>
+          {user ? (
+            <Button to="/dashboard" size="sm">
+              Go to dashboard
+            </Button>
+          ) : (
+            <>
+              <Button to="/login" variant="ghost" size="sm">
+                Sign in
+              </Button>
+              <Button to="/signup" size="sm">
+                Start free
+              </Button>
+            </>
+          )}
         </div>
 
         <button
@@ -77,14 +87,20 @@ export function MarketingNav() {
                 {l.label}
               </a>
             ))}
-            <div className="mt-2 grid grid-cols-2 gap-2">
-              <Button to="/login" variant="secondary" size="sm">
-                Sign in
+            {user ? (
+              <Button to="/dashboard" size="sm" className="mt-2">
+                Go to dashboard
               </Button>
-              <Button to="/signup" size="sm">
-                Start free
-              </Button>
-            </div>
+            ) : (
+              <div className="mt-2 grid grid-cols-2 gap-2">
+                <Button to="/login" variant="secondary" size="sm">
+                  Sign in
+                </Button>
+                <Button to="/signup" size="sm">
+                  Start free
+                </Button>
+              </div>
+            )}
           </div>
         </div>
       )}

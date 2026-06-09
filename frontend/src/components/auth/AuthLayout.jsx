@@ -20,7 +20,7 @@ export function AuthLayout({ children }) {
         <div className="pointer-events-none absolute -right-20 top-1/4 h-96 w-96 rounded-full bg-radial-glow blur-2xl" />
         <div className="relative flex h-full flex-col justify-center px-14">
           <span className="inline-flex w-fit items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs font-medium text-accent-cyan">
-            <Sparkles size={14} /> Powered by OpenAI
+            <Sparkles size={14} /> Field-perfect AI extraction
           </span>
           <h2 className="mt-6 max-w-md text-balance text-4xl font-semibold leading-tight tracking-tight text-white">
             Reclaim hours every week with{" "}
