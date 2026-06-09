@@ -15,6 +15,7 @@ PLANS = {
         "multiPage": False,
         "api": False,
         "webhooks": False,
+        "statements": False,
         "features": [
             "5 invoices / month",
             "PDF & image upload",
@@ -34,6 +35,7 @@ PLANS = {
         "multiPage": True,
         "api": False,
         "webhooks": False,
+        "statements": False,
         "features": [
             "100 invoices / month",
             "Multi-file batch upload",
@@ -53,6 +55,7 @@ PLANS = {
         "multiPage": True,
         "api": True,
         "webhooks": True,
+        "statements": False,
         "features": [
             "Unlimited invoices",
             "Multi-file batch upload",
@@ -72,18 +75,19 @@ PLANS = {
         "multiPage": True,
         "api": True,
         "webhooks": True,
+        "statements": True,
         "features": [
             "Everything in Pro",
+            "Bank statement extraction (beta)",
             "High-volume processing",
             "Centralized billing & invoicing",
             "Priority support + onboarding",
-            "Dedicated success manager",
         ],
     },
 }
 
 # Capabilities exposed to clients / used for server-side gating.
-CAPABILITIES = ("batch", "multiPage", "api", "webhooks")
+CAPABILITIES = ("batch", "multiPage", "api", "webhooks", "statements")
 
 PLAN_ORDER = ["free", "starter", "pro", "business"]
 

@@ -40,6 +40,7 @@ export function ExtractWorkspace() {
   const canBatch = planAllows(user?.plan, "batch");
   const canMultiPage = planAllows(user?.plan, "multiPage");
   const canMulti = canBatch || canMultiPage;
+  const canStatements = planAllows(user?.plan, "statements");
 
   const [status, setStatus] = useState("idle"); // idle|selected|processing|done|error
   const [files, setFiles] = useState([]);
@@ -53,6 +54,9 @@ export function ExtractWorkspace() {
   const atLimit = usage?.atLimit;
   const docLabel = { receipt: "receipt", statement: "bank statement" }[docType] || "invoice";
   const docArticle = docType === "invoice" ? "an" : "a";
+  // Bank statements are Business-only (beta). Block upload when selected without it.
+  const statementLocked = docType === "statement" && !canStatements;
+  const blocked = atLimit || statementLocked;
 
   const onDrop = useCallback(
     (accepted, rejected) => {
@@ -81,7 +85,7 @@ export function ExtractWorkspace() {
     maxFiles: canMulti ? MAX_FILES : 1,
     noClick: true,
     noKeyboard: true,
-    disabled: atLimit || status === "processing",
+    disabled: blocked || status === "processing",
   });
 
   function removeFile(idx) {
@@ -168,8 +172,10 @@ export function ExtractWorkspace() {
       {atLimit && status !== "done" && <LimitBanner usage={usage} />}
 
       {(status === "idle" || status === "selected") && (
-        <DocTypeToggle value={docType} onChange={setDocType} disabled={atLimit} />
+        <DocTypeToggle value={docType} onChange={setDocType} disabled={atLimit} canStatements={canStatements} />
       )}
+
+      {statementLocked && status !== "done" && <StatementLockBanner />}
 
       <AnimatePresence mode="wait">
         {status === "done" ? (
@@ -211,7 +217,7 @@ export function ExtractWorkspace() {
               {...getRootProps()}
               className={cn(
                 "relative flex min-h-[340px] flex-col items-center justify-center rounded-2xl border-2 border-dashed px-6 py-10 text-center transition-all",
-                atLimit ? "cursor-not-allowed border-white/10 opacity-50" : "cursor-default",
+                blocked ? "cursor-not-allowed border-white/10 opacity-50" : "cursor-default",
                 isDragActive ? "border-brand-400/70 bg-brand-500/[0.08]" : "border-white/12 bg-white/[0.015] hover:border-white/20",
               )}
             >
@@ -223,7 +229,7 @@ export function ExtractWorkspace() {
                   canBatch={canBatch}
                   canMultiPage={canMultiPage}
                   docLabel={docLabel}
-                  disabled={atLimit}
+                  disabled={blocked}
                   onRemove={removeFile}
                   onAddMore={open}
                   onSingle={() => extractCombined(false)}
@@ -247,7 +253,7 @@ export function ExtractWorkspace() {
                       ? "Drag & drop one or more PDFs or images, or browse. Up to 10MB each."
                       : "Drag & drop a PDF or image, or browse to select. Up to 10MB."}
                   </p>
-                  <Button className="mt-6" onClick={open} disabled={atLimit} type="button">
+                  <Button className="mt-6" onClick={open} disabled={blocked} type="button">
                     <UploadCloud size={16} /> Choose file{canMulti ? "s" : ""}
                   </Button>
                   <div className="mt-5 flex items-center gap-3 text-xs text-slate-500">
@@ -568,11 +574,11 @@ function BatchResults({ items, onReset }) {
   );
 }
 
-function DocTypeToggle({ value, onChange, disabled }) {
+function DocTypeToggle({ value, onChange, disabled, canStatements }) {
   const opts = [
     { id: "invoice", label: "Invoice", icon: FileText },
     { id: "receipt", label: "Receipt", icon: Receipt },
-    { id: "statement", label: "Statement", icon: Landmark },
+    { id: "statement", label: "Statement", icon: Landmark, locked: !canStatements },
   ];
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
@@ -592,10 +598,25 @@ function DocTypeToggle({ value, onChange, disabled }) {
               )}
             >
               <o.icon size={15} /> {o.label}
+              {o.locked && <Lock size={12} className="text-slate-500" />}
             </button>
           );
         })}
       </div>
+    </div>
+  );
+}
+
+function StatementLockBanner() {
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-brand-400/25 bg-brand-500/[0.07] px-4 py-3">
+      <div className="flex items-center gap-2.5 text-sm text-brand-100">
+        <Lock size={16} />
+        Bank statement extraction is a <span className="font-semibold">Business</span> plan feature (beta).
+      </div>
+      <Button size="sm" to="/dashboard/billing">
+        Upgrade
+      </Button>
     </div>
   );
 }

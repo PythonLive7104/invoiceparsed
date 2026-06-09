@@ -142,6 +142,18 @@ def extract():
     if doc_type not in DOC_TYPES:
         doc_type = "invoice"
 
+    # Bank statements are a Business-plan capability (beta, while accuracy is
+    # validated).
+    if doc_type == "statement" and not plan_allows(user.plan, "statements"):
+        return (
+            jsonify({
+                "error": "Bank statement extraction is a Business-plan feature.",
+                "code": "UPGRADE_REQUIRED",
+                "capability": "statements",
+            }),
+            402,
+        )
+
     mode = (request.form.get("mode") or "single").lower()
 
     if mode == "batch" and not plan_allows(user.plan, "batch"):

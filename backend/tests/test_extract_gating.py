@@ -139,10 +139,24 @@ FAKE_STATEMENT = {
 }
 
 
+def test_statement_blocked_below_business(client, app, monkeypatch):
+    _stub_extract(monkeypatch)
+    for plan in ("free", "starter", "pro"):
+        user = make_user(app, email=f"{plan}-stmt@example.com", plan=plan)
+        r = client.post(
+            "/api/extract",
+            data={"file": _file("statement.png"), "doc_type": "statement"},
+            headers=auth_header(app, user),
+            content_type="multipart/form-data",
+        )
+        assert r.status_code == 402, plan
+        assert r.get_json()["capability"] == "statements"
+
+
 def test_statement_extraction_maps_headline_and_csv(client, app, monkeypatch):
     import routes.extract_routes as er
     monkeypatch.setattr(er, "extract_document", lambda pages, doc_type="invoice": FAKE_STATEMENT)
-    user = make_user(app, plan="free")
+    user = make_user(app, plan="business")
     r = client.post(
         "/api/extract",
         data={"file": _file("statement.png"), "doc_type": "statement"},

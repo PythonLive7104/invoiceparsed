@@ -11,6 +11,7 @@ export const PLANS = {
     multiPage: false,
     api: false,
     webhooks: false,
+    statements: false,
     features: [
       "5 invoices / month",
       "PDF & image upload",
@@ -30,6 +31,7 @@ export const PLANS = {
     multiPage: true,
     api: false,
     webhooks: false,
+    statements: false,
     features: [
       "100 invoices / month",
       "Multi-file batch upload",
@@ -49,6 +51,7 @@ export const PLANS = {
     multiPage: true,
     api: true,
     webhooks: true,
+    statements: false,
     features: [
       "Unlimited invoices",
       "Multi-file batch upload",
@@ -68,12 +71,13 @@ export const PLANS = {
     multiPage: true,
     api: true,
     webhooks: true,
+    statements: true,
     features: [
       "Everything in Pro",
+      "Bank statement extraction (beta)",
       "High-volume processing",
       "Centralized billing & invoicing",
       "Priority support + onboarding",
-      "Dedicated success manager",
     ],
   },
 };
