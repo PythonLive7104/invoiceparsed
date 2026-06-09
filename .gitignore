@@ -1,0 +1,5 @@
+# Root Compose env (COMPOSE_FILE, SITE_DOMAIN, POSTGRES_PASSWORD, VITE_* build args)
+.env
+
+# Local database backups (never commit dumps)
+backups/
