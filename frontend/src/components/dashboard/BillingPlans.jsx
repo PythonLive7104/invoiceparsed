@@ -11,10 +11,28 @@ export function BillingPlans() {
   const currentPlan = user?.plan;
   const [pending, setPending] = useState(null);
   const [live, setLive] = useState(false);
+  const [justPaid, setJustPaid] = useState(false);
 
   useEffect(() => {
     api.get("/api/billing/config").then(({ data }) => setLive(!!data.live)).catch(() => {});
   }, []);
+
+  // Returning from a successful Dodo checkout (return_url has ?checkout=success).
+  // Show a confirmation and poll for the webhook-applied plan change (it can lag
+  // a moment after the redirect).
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("checkout") !== "success") return;
+    setJustPaid(true);
+    let n = 0;
+    const tick = () => {
+      refreshUsage();
+      if (++n < 5) setTimeout(tick, 2000);
+    };
+    tick();
+    // Clean the URL so the banner doesn't reappear on refresh.
+    window.history.replaceState({}, "", "/dashboard/billing");
+  }, [refreshUsage]);
 
   async function choose(planId) {
     if (planId === currentPlan) return;
@@ -35,6 +53,15 @@ export function BillingPlans() {
 
   return (
     <div className="space-y-5">
+      {justPaid && (
+        <div className="flex items-start gap-2.5 rounded-xl border border-emerald-500/30 bg-emerald-500/[0.08] px-4 py-3 text-sm text-emerald-200">
+          <BadgeCheck size={16} className="mt-0.5 shrink-0" />
+          <span>
+            🎉 Payment received — your <span className="font-semibold capitalize">{currentPlan}</span> plan is now
+            active. It may take a few seconds to reflect.
+          </span>
+        </div>
+      )}
       {!live && (
         <div className="flex items-start gap-2.5 rounded-xl border border-brand-400/20 bg-brand-500/[0.06] px-4 py-3 text-sm text-brand-200">
           <Info size={16} className="mt-0.5 shrink-0" />

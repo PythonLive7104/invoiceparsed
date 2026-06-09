@@ -54,7 +54,7 @@ def checkout():
         db.session.commit()
         return jsonify({"user": g.user.public(), "demo": True})
 
-    return_url = f'{current_app.config["APP_URL"].rstrip("/")}/dashboard/billing'
+    return_url = f'{current_app.config["APP_URL"].rstrip("/")}/dashboard/billing?checkout=success'
     try:
         url = billing.create_checkout(g.user, plan, return_url)
     except billing.BillingError as exc:
@@ -76,8 +76,10 @@ def upgrade():
     return jsonify({"user": g.user.public(), "demo": True})
 
 
-# Dodo event types that mean "this subscription is now paid/active".
-_ACTIVATING = {"subscription.active", "subscription.created", "payment.succeeded"}
+# Dodo event types that mean "this subscription is now paid/active". We grant
+# only on confirmed-payment events — NOT subscription.created, which can fire
+# before payment completes.
+_ACTIVATING = {"subscription.active", "payment.succeeded"}
 # ...and that mean "access should drop back to free".
 _DEACTIVATING = {"subscription.cancelled", "subscription.canceled", "subscription.expired"}
 
