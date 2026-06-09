@@ -4,7 +4,7 @@
 
 export const PAGE_META = {
   "/": {
-    title: "AI invoice data extraction software",
+    title: "AI invoice, receipt & statement extraction",
     description:
       "AI parser for invoices, receipts and bank statements. Turn a PDF or image into clean structured data — export CSV or JSON in seconds. Free plan.",
     schema: ["software", "faq"],
