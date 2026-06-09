@@ -36,7 +36,7 @@ export default function DashboardShell() {
   const sidebar = (
     <div className="flex h-full flex-col">
       <div className="px-5 py-5">
-        <Logo to="/dashboard" />
+        <Logo to="/" />
       </div>
 
       <nav className="flex-1 space-y-1 px-3">
@@ -95,7 +95,7 @@ export default function DashboardShell() {
       </aside>
 
       <div className="flex items-center justify-between border-b border-white/[0.06] bg-ink-950/80 px-4 py-3 backdrop-blur-xl lg:hidden">
-        <Logo to="/dashboard" />
+        <Logo to="/" />
         <button
           onClick={() => setOpen(true)}
           className="grid h-10 w-10 place-items-center rounded-lg text-slate-200 hover:bg-white/[0.06]"
