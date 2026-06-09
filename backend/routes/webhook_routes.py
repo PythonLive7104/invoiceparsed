@@ -62,9 +62,11 @@ def test_webhook(wid):
     if hook is None:
         return jsonify({"error": "Webhook not found."}), 404
 
+    # Single attempt — a manual test shouldn't block the request on retry backoff.
     status = deliver(
         hook,
         "ping",
         {"message": "Test event from InvoiceParsed", "webhookId": hook.id},
+        max_attempts=1,
     )
     return jsonify({"delivered": 200 <= status < 300, "status": status})

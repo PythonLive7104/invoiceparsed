@@ -52,12 +52,18 @@ def _attempt(webhook: Webhook, event: str, body: bytes, delivery_id: str, attemp
         return 0
 
 
-def deliver(webhook: Webhook, event: str, data: dict, *, sleep=time.sleep) -> int:
+def deliver(webhook: Webhook, event: str, data: dict, *, sleep=time.sleep, max_attempts=None) -> int:
     """Deliver one event to one webhook, retrying with backoff until a 2xx or the
-    attempt budget runs out. Returns the final HTTP status (0 on error)."""
+    attempt budget runs out. Returns the final HTTP status (0 on error).
+
+    `max_attempts` overrides the configured budget — the manual "test" endpoint
+    passes 1 so it doesn't block the request thread on backoff sleeps.
+    """
     body = json.dumps({"event": event, "data": data}, separators=(",", ":")).encode("utf-8")
     delivery_id = uuid.uuid4().hex
-    max_attempts = max(1, Config.WEBHOOK_MAX_ATTEMPTS)
+    if max_attempts is None:
+        max_attempts = Config.WEBHOOK_MAX_ATTEMPTS
+    max_attempts = max(1, max_attempts)
 
     status = 0
     for attempt in range(1, max_attempts + 1):
