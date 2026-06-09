@@ -610,10 +610,12 @@ function DocTypeToggle({ value, onChange, disabled, canStatements }) {
 function StatementLockBanner() {
   return (
     <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-brand-400/25 bg-brand-500/[0.07] px-4 py-3">
-      <div className="flex items-center gap-2.5 text-sm text-brand-100">
-        <Lock size={16} />
-        Bank statement extraction is a <span className="font-semibold">Business</span> plan feature (beta).
-      </div>
+      <p className="flex items-start gap-2.5 text-sm text-brand-100">
+        <Lock size={16} className="mt-0.5 shrink-0" />
+        <span>
+          Bank statement extraction is a <span className="font-semibold">Business</span> plan feature (beta).
+        </span>
+      </p>
       <Button size="sm" to="/dashboard/billing">
         Upgrade
       </Button>
