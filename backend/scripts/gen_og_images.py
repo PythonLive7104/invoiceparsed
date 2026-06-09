@@ -101,8 +101,8 @@ if __name__ == "__main__":
     pub = FRONTEND_PUBLIC
     og_image(
         os.path.join(pub, "og", "invoiceparsed-og.png"),
-        "AI invoice data extraction",
-        "Turn any invoice PDF or image into clean JSON or CSV in seconds.",
+        "Invoice, receipt & statement extraction",
+        "Turn any PDF or image into clean CSV or JSON, in seconds.",
     )
     og_image(
         os.path.join(pub, "og", "blog", "extract-invoice-pdf.png"),
