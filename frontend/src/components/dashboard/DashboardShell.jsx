@@ -89,7 +89,7 @@ export default function DashboardShell() {
   );
 
   return (
-    <div className="min-h-screen lg:grid lg:grid-cols-[268px_1fr]">
+    <div className="min-h-screen overflow-x-clip lg:grid lg:grid-cols-[268px_1fr]">
       <aside className="sticky top-0 hidden h-screen border-r border-white/[0.06] bg-ink-900/40 backdrop-blur-xl lg:block">
         {sidebar}
       </aside>
