@@ -9,10 +9,11 @@ from werkzeug.utils import secure_filename
 
 from auth import api_or_login_required
 from config import Config
-from csv_util import invoice_to_csv, receipt_to_csv
+from csv_util import invoice_to_csv, receipt_to_csv, statement_to_csv
 from extensions import db
 from invoice_schema import normalize as normalize_invoice
 from receipt_schema import normalize as normalize_receipt
+from statement_schema import normalize as normalize_statement
 from models import Extraction, User
 from openai_service import extract_document
 from plans import build_usage, plan_allows, start_of_month
@@ -22,11 +23,14 @@ extract_bp = Blueprint("extract", __name__, url_prefix="/api")
 
 ALLOWED_MIME = {"application/pdf", "image/jpeg", "image/jpg", "image/png"}
 ALLOWED_EXT = (".pdf", ".jpg", ".jpeg", ".png")
-DOC_TYPES = ("invoice", "receipt")
+DOC_TYPES = ("invoice", "receipt", "statement")
+
+_NORMALIZERS = {"invoice": normalize_invoice, "receipt": normalize_receipt, "statement": normalize_statement}
+_CSV_WRITERS = {"invoice": invoice_to_csv, "receipt": receipt_to_csv, "statement": statement_to_csv}
 
 
 def _normalize_for(doc_type: str):
-    return normalize_receipt if doc_type == "receipt" else normalize_invoice
+    return _NORMALIZERS.get(doc_type, normalize_invoice)
 
 
 def _count_usage(user: User) -> int:
@@ -90,13 +94,20 @@ def _apply_headline_fields(row: Extraction, data: dict) -> None:
         row.invoice_number = data.get("receipt_number")
         row.invoice_date = data.get("receipt_date")
         row.due_date = None
+        row.total = data.get("total")
+    elif row.doc_type == "statement":
+        row.vendor_name = data.get("account_holder") or data.get("bank_name")
+        row.invoice_number = data.get("account_number")
+        row.invoice_date = data.get("period_start")
+        row.due_date = data.get("period_end")
+        row.total = data.get("closing_balance")
     else:
         row.vendor_name = (data.get("vendor") or {}).get("name")
         row.invoice_number = data.get("invoice_number")
         row.invoice_date = data.get("invoice_date")
         row.due_date = data.get("due_date")
+        row.total = data.get("total")
     row.currency = data.get("currency")
-    row.total = data.get("total")
     row.data = json.dumps(data)
 
 
@@ -306,7 +317,7 @@ def download_csv(eid):
         return jsonify({"error": "Extraction not found."}), 404
 
     data = json.loads(row.data)
-    csv_text = receipt_to_csv(data) if row.doc_type == "receipt" else invoice_to_csv(data)
+    csv_text = _CSV_WRITERS.get(row.doc_type, invoice_to_csv)(data)
     safe = "".join(c if c.isalnum() or c in "-_" else "_" for c in (row.invoice_number or row.vendor_name or row.id))
     return Response(
         csv_text,

@@ -51,6 +51,22 @@ def receipt_to_csv(rec: dict) -> str:
     return out.getvalue()
 
 
+STATEMENT_HEADERS = ["Date", "Description", "Debit", "Credit", "Balance", "Reference"]
+
+
+def statement_to_csv(stmt: dict) -> str:
+    """Flatten a bank statement's transactions into CSV (one row per transaction)."""
+    out = io.StringIO()
+    writer = csv.writer(out)
+    writer.writerow(STATEMENT_HEADERS)
+    for t in stmt.get("transactions") or []:
+        writer.writerow([
+            "" if t.get(k) is None else t.get(k)
+            for k in ("date", "description", "debit", "credit", "balance", "reference")
+        ])
+    return out.getvalue()
+
+
 def invoice_to_csv(inv: dict) -> str:
     vendor = inv.get("vendor") or {}
     base = [

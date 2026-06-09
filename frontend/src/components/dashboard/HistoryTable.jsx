@@ -1,6 +1,11 @@
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { Search, FileText, Receipt, Download, Trash2, Eye, Inbox, AlertCircle } from "lucide-react";
+import { Search, FileText, Receipt, Landmark, Download, Trash2, Eye, Inbox, AlertCircle } from "lucide-react";
+
+const DOC_META = {
+  receipt: { label: "Receipt", Icon: Receipt },
+  statement: { label: "Statement", Icon: Landmark },
+};
 import { Button } from "@/components/ui/Button";
 import { cn, formatDate, formatMoney } from "@/lib/utils";
 import { api, downloadFile } from "@/lib/api";
@@ -80,22 +85,28 @@ export function HistoryTable({ initialItems }) {
                 return (
                   <tr key={it.id} className="group transition-colors hover:bg-white/[0.02]">
                     <td className="px-5 py-3.5">
-                      <div className="flex items-center gap-3">
-                        <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-brand-500/12 text-brand-300">
-                          {it.docType === "receipt" ? <Receipt size={15} /> : <FileText size={15} />}
-                        </span>
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-2">
-                            <span className="truncate font-medium text-white">{it.vendorName || "Unknown vendor"}</span>
-                            {it.docType === "receipt" && (
-                              <span className="shrink-0 rounded-full bg-white/[0.06] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
-                                Receipt
-                              </span>
-                            )}
+                      {(() => {
+                        const meta = DOC_META[it.docType];
+                        const Icon = meta?.Icon || FileText;
+                        return (
+                          <div className="flex items-center gap-3">
+                            <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-brand-500/12 text-brand-300">
+                              <Icon size={15} />
+                            </span>
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-2">
+                                <span className="truncate font-medium text-white">{it.vendorName || "Unknown vendor"}</span>
+                                {meta && (
+                                  <span className="shrink-0 rounded-full bg-white/[0.06] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                                    {meta.label}
+                                  </span>
+                                )}
+                              </div>
+                              <div className="truncate text-xs text-slate-500">{it.fileName}</div>
+                            </div>
                           </div>
-                          <div className="truncate text-xs text-slate-500">{it.fileName}</div>
-                        </div>
-                      </div>
+                        );
+                      })()}
                     </td>
                     <td className="px-4 py-3.5 text-slate-300">{it.invoiceNumber || "—"}</td>
                     <td className="px-4 py-3.5 text-slate-400">{formatDate(it.invoiceDate || it.createdAt)}</td>

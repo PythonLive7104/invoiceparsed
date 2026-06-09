@@ -14,6 +14,8 @@ from invoice_schema import INVOICE_JSON_SCHEMA, normalize
 from invoice_schema import normalize as normalize_invoice
 from receipt_schema import RECEIPT_JSON_SCHEMA
 from receipt_schema import normalize as normalize_receipt
+from statement_schema import STATEMENT_JSON_SCHEMA
+from statement_schema import normalize as normalize_statement
 
 SYSTEM_PROMPT = """You are an expert invoice data-extraction engine for InvoiceParsed.
 You receive one invoice (possibly spanning multiple pages or files) as images
@@ -52,10 +54,33 @@ Rules:
   1 = certain and clearly legible; lower = unclear/inferred/not found (near 0 for
   fields returned as null)."""
 
+STATEMENT_PROMPT = """You are an expert bank-statement data-extraction engine for InvoiceParsed.
+You receive a bank/wallet account statement (possibly spanning multiple pages or
+screenshots) as images and/or PDFs and return clean, structured data.
+
+Rules:
+- All provided pages/files belong to the SAME statement; merge them in order and
+  combine the transaction rows across pages into one list.
+- Extract the account holder, account number, bank/wallet name, the statement
+  period (start and end dates), opening and closing balances, and the total debit
+  and total credit if shown.
+- Normalize dates to ISO 8601 (YYYY-MM-DD) when unambiguous.
+- Use the ISO 4217 currency code (e.g. USD, EUR, NGN) inferred from symbols/text.
+- For EACH transaction row capture: date, description, debit (money out as a
+  positive number, else null), credit (money in as a positive number, else null),
+  running balance after the transaction (or null), and reference (or null).
+- A row is either a debit or a credit — put the amount in the correct column and
+  null in the other. Numbers must be plain (no symbols, commas or separators).
+- Capture every transaction row you can see, in order. Do not invent rows.
+- For every top-level field report a confidence score from 0 to 1 in `confidence`
+  (1 = certain/clearly legible; near 0 = unclear/inferred/not found). The
+  `transactions` confidence reflects how reliably you read the rows overall."""
+
 # Per document type: (prompt, json schema, schema name, normalizer).
 _DOC_TYPES = {
     "invoice": (SYSTEM_PROMPT, INVOICE_JSON_SCHEMA, "invoice", normalize_invoice),
     "receipt": (RECEIPT_PROMPT, RECEIPT_JSON_SCHEMA, "receipt", normalize_receipt),
+    "statement": (STATEMENT_PROMPT, STATEMENT_JSON_SCHEMA, "statement", normalize_statement),
 }
 
 _client = None
@@ -100,7 +125,7 @@ def extract_document(pages: list[dict], doc_type: str = "invoice") -> dict:
     if not pages:
         raise RuntimeError("No pages provided for extraction.")
     prompt, schema, schema_name, normalizer = _DOC_TYPES.get(doc_type, _DOC_TYPES["invoice"])
-    label = "receipt" if doc_type == "receipt" else "invoice"
+    label = {"receipt": "receipt", "statement": "bank statement"}.get(doc_type, "invoice")
 
     intro = (
         f"This {label} spans {len(pages)} pages/files provided below, in order. "

@@ -18,6 +18,7 @@ import {
   Lock,
   MinusCircle,
   Receipt,
+  Landmark,
 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { ResultCard } from "@/components/dashboard/ResultCard";
@@ -50,8 +51,8 @@ export function ExtractWorkspace() {
   const [uploadPct, setUploadPct] = useState(0); // single/combine upload progress
 
   const atLimit = usage?.atLimit;
-  const docLabel = docType === "receipt" ? "receipt" : "invoice";
-  const docArticle = docType === "receipt" ? "a" : "an";
+  const docLabel = { receipt: "receipt", statement: "bank statement" }[docType] || "invoice";
+  const docArticle = docType === "invoice" ? "an" : "a";
 
   const onDrop = useCallback(
     (accepted, rejected) => {
@@ -571,10 +572,11 @@ function DocTypeToggle({ value, onChange, disabled }) {
   const opts = [
     { id: "invoice", label: "Invoice", icon: FileText },
     { id: "receipt", label: "Receipt", icon: Receipt },
+    { id: "statement", label: "Statement", icon: Landmark },
   ];
   return (
-    <div className="flex items-center gap-3">
-      <span className="text-sm text-slate-400">Document type</span>
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+      <span className="hidden text-sm text-slate-400 sm:inline">Document type</span>
       <div className="inline-flex rounded-xl border border-white/10 bg-white/[0.03] p-1">
         {opts.map((o) => {
           const active = value === o.id;

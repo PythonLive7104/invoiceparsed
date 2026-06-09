@@ -125,6 +125,51 @@ def test_receipt_patch_uses_receipt_schema(client, app, monkeypatch):
     assert body["docType"] == "receipt"
 
 
+FAKE_STATEMENT = {
+    "account_holder": "Solomon O", "account_number": "9152608026", "bank_name": "OPay",
+    "currency": "NGN", "period_start": "2026-05-08", "period_end": "2026-05-25",
+    "opening_balance": 0.0, "closing_balance": 0.0, "total_debit": 1349881.0, "total_credit": 1349881.0,
+    "transactions": [
+        {"date": "2026-05-08", "description": "Airtime", "debit": 84.0, "credit": None, "balance": 0.0, "reference": "A1"},
+        {"date": "2026-05-08", "description": "Wallet Withdrawal", "debit": None, "credit": 84.0, "balance": 84.0, "reference": "A2"},
+    ],
+    "confidence": {k: 1.0 for k in (
+        "account_holder", "account_number", "bank_name", "currency", "period_start",
+        "period_end", "opening_balance", "closing_balance", "total_debit", "total_credit", "transactions")},
+}
+
+
+def test_statement_extraction_maps_headline_and_csv(client, app, monkeypatch):
+    import routes.extract_routes as er
+    monkeypatch.setattr(er, "extract_document", lambda pages, doc_type="invoice": FAKE_STATEMENT)
+    user = make_user(app, plan="free")
+    r = client.post(
+        "/api/extract",
+        data={"file": _file("statement.png"), "doc_type": "statement"},
+        headers=auth_header(app, user),
+        content_type="multipart/form-data",
+    )
+    assert r.status_code == 200
+    body = r.get_json()
+    assert body["docType"] == "statement"
+    assert len(body["invoice"]["transactions"]) == 2
+
+    from models import Extraction
+    with app.app_context():
+        row = Extraction.query.get(body["id"])
+        assert row.doc_type == "statement"
+        assert row.vendor_name == "Solomon O"          # account holder → vendor headline
+        assert row.invoice_date == "2026-05-08"          # period_start → date headline
+        assert row.currency == "NGN"
+
+    # CSV export uses the statement (transactions) format.
+    csv_resp = client.get(f"/api/extractions/{body['id']}/csv", headers=auth_header(app, user))
+    assert csv_resp.status_code == 200
+    text = csv_resp.get_data(as_text=True)
+    assert "Date,Description,Debit,Credit,Balance,Reference" in text
+    assert "Airtime" in text
+
+
 def test_usage_limit_reached_returns_402(client, app, monkeypatch):
     _stub_extract(monkeypatch)
     user = make_user(app, plan="free")
