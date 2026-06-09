@@ -15,6 +15,7 @@ import base64
 import hashlib
 import hmac
 import json
+import os
 import time
 
 import httpx
@@ -62,6 +63,15 @@ def create_checkout(user, plan: str, return_url: str) -> str:
         "payment_link": True,
         "return_url": return_url,
         "customer": {"email": user.email, "name": user.name or user.email},
+        # Dodo requires a billing object; the hosted checkout page collects the
+        # real address from the customer. Country is a required placeholder.
+        "billing": {
+            "city": "",
+            "country": os.getenv("DODO_DEFAULT_COUNTRY", "US"),
+            "state": "",
+            "street": "",
+            "zipcode": "",
+        },
         "metadata": {"user_id": user.id, "plan": plan},
     }
     try:
