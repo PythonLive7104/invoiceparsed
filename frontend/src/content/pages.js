@@ -35,4 +35,18 @@ export const PAGE_META = {
       "Guides on AI invoice extraction, OCR, and automating invoice data entry for freelancers and small businesses.",
     schema: [],
   },
+  "/compare": {
+    title: "Comparisons — InvoiceParsed",
+    titleRaw: true,
+    description:
+      "How InvoiceParsed compares to manual data entry and traditional OCR for extracting invoice and receipt data.",
+    schema: [],
+  },
+  "/use-cases": {
+    title: "Use cases — InvoiceParsed",
+    titleRaw: true,
+    description:
+      "How freelancers, small businesses and finance teams use InvoiceParsed to automate invoice and receipt data extraction.",
+    schema: [],
+  },
 };

@@ -17,7 +17,9 @@ const Pricing = lazy(() => import("@/pages/Pricing.jsx"));
 const About = lazy(() => import("@/pages/About.jsx"));
 const BlogIndex = lazy(() => import("@/pages/BlogIndex.jsx"));
 const BlogPost = lazy(() => import("@/pages/BlogPost.jsx"));
+const CompareIndex = lazy(() => import("@/pages/CompareIndex.jsx"));
 const ComparePage = lazy(() => import("@/pages/ComparePage.jsx"));
+const UseCaseIndex = lazy(() => import("@/pages/UseCaseIndex.jsx"));
 const UseCasePage = lazy(() => import("@/pages/UseCasePage.jsx"));
 const DashboardShell = lazy(() => import("@/components/dashboard/DashboardShell.jsx"));
 const DashboardHome = lazy(() => import("@/pages/DashboardHome.jsx"));
@@ -63,7 +65,9 @@ export default function App() {
           <Route path="/faq" element={<Faq />} />
           <Route path="/blog" element={<BlogIndex />} />
           <Route path="/blog/:slug" element={<BlogPost />} />
+          <Route path="/compare" element={<CompareIndex />} />
           <Route path="/compare/:slug" element={<ComparePage />} />
+          <Route path="/use-cases" element={<UseCaseIndex />} />
           <Route path="/use-cases/:slug" element={<UseCasePage />} />
 
           <Route

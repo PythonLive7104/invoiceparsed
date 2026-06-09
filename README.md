@@ -162,6 +162,25 @@ management are JWT-only. Extraction events are POSTed to active webhooks, signed
 with `X-InvoiceParsed-Signature: sha256=<HMAC>`, and **retried with exponential
 backoff** until a 2xx (see `WEBHOOK_*` settings).
 
+The webhook body is `{ "event": "extraction.completed", "data": { … } }`, where
+`data` is the extraction payload — including **`docType`** (`"invoice"` or
+`"receipt"`) and the parsed document under `invoice`:
+
+```json
+{
+  "event": "extraction.completed",
+  "data": {
+    "id": "…",
+    "docType": "receipt",
+    "fileName": "lunch.jpg",
+    "status": "completed",
+    "createdAt": "2026-06-09T…Z",
+    "invoice": { "merchant": { "name": "Cafe Roma" }, "total": 10.30, "…": "…" },
+    "files": [ … ]
+  }
+}
+```
+
 All endpoints are **rate-limited** per IP (`RATELIMIT_DEFAULT`); credential and
 email-sending auth endpoints get a tighter budget (`RATELIMIT_AUTH`). Over the
 limit returns `429` with `{"code": "RATE_LIMITED"}`.

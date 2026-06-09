@@ -37,6 +37,12 @@ def app(tmp_path, monkeypatch):
     monkeypatch.setattr(ar, "send_verification", lambda *a, **k: True)
     monkeypatch.setattr(ar, "send_password_reset", lambda *a, **k: True)
 
+    # Keep tests hermetic regardless of the developer's .env: billing reads the
+    # module-level Config, so default it to demo mode (specific billing tests
+    # override these).
+    monkeypatch.setattr("config.Config.DODO_API_KEY", "", raising=False)
+    monkeypatch.setattr("config.Config.DODO_WEBHOOK_SECRET", "", raising=False)
+
     from app import create_app
     from extensions import db
 

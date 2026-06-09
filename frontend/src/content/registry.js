@@ -15,6 +15,8 @@ export const STATIC_ROUTES = [
   { path: "/faq", changefreq: "monthly", priority: 0.7 },
   { path: "/about", changefreq: "yearly", priority: 0.5 },
   { path: "/blog", changefreq: "weekly", priority: 0.7 },
+  { path: "/compare", changefreq: "monthly", priority: 0.6 },
+  { path: "/use-cases", changefreq: "monthly", priority: 0.6 },
 ];
 
 export const BLOG_POSTS = [

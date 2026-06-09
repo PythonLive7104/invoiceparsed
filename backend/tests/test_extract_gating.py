@@ -101,6 +101,30 @@ def test_receipt_extraction_stores_doc_type_and_headline(client, app, monkeypatc
         assert row.total == 10.3
 
 
+def test_receipt_patch_uses_receipt_schema(client, app, monkeypatch):
+    import routes.extract_routes as er
+    monkeypatch.setattr(er, "extract_document", lambda pages, doc_type="invoice": FAKE_RECEIPT)
+    user = make_user(app, plan="free")
+    created = client.post(
+        "/api/extract",
+        data={"file": _file("receipt.jpg"), "doc_type": "receipt"},
+        headers=auth_header(app, user),
+        content_type="multipart/form-data",
+    ).get_json()
+
+    edited = dict(FAKE_RECEIPT)
+    edited["merchant"] = {"name": "Edited Cafe", "address": None}
+    edited["tip"] = 3.5
+    r = client.patch(f"/api/extractions/{created['id']}", json={"invoice": edited},
+                     headers=auth_header(app, user))
+    assert r.status_code == 200
+    body = r.get_json()
+    # Receipt-shaped fields survive the PATCH (proves receipt normalize was used).
+    assert body["invoice"]["merchant"]["name"] == "Edited Cafe"
+    assert body["invoice"]["tip"] == 3.5
+    assert body["docType"] == "receipt"
+
+
 def test_usage_limit_reached_returns_402(client, app, monkeypatch):
     _stub_extract(monkeypatch)
     user = make_user(app, plan="free")
