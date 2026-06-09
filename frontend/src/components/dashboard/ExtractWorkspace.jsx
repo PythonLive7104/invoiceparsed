@@ -187,7 +187,7 @@ export function ExtractWorkspace() {
                     {" — "}
                     {usage?.limit === null
                       ? `${usage?.used} processed this month`
-                      : `${usage?.remaining} of ${usage?.limit} invoices left this month`}
+                      : `${usage?.remaining} of ${usage?.limit} documents left this month`}
                   </div>
                   <Button size="sm" variant="secondary" onClick={reset}>
                     <RotateCcw size={14} /> Extract another
@@ -605,7 +605,7 @@ function LimitBanner({ usage }) {
     <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-500/30 bg-amber-500/[0.08] px-4 py-3">
       <div className="flex items-center gap-2.5 text-sm text-amber-200">
         <AlertCircle size={18} />
-        You've used all {usage.limit} invoices on the {usage.planName} plan this month.
+        You've used all {usage.limit} documents on the {usage.planName} plan this month.
       </div>
       <Button size="sm" to="/dashboard/billing">
         Upgrade plan

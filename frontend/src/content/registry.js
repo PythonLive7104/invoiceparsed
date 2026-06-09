@@ -297,6 +297,46 @@ export const USE_CASES = [
     ],
   },
   {
+    slug: "bank-statement-extraction",
+    title: "Bank Statement Data Extraction & Conversion",
+    description:
+      "Convert bank statement PDFs and screenshots to structured transaction data with AI. Extract every row — date, description, debit, credit, balance — to CSV.",
+    excerpt:
+      "InvoiceParsed converts bank and wallet statements (PDF or screenshot) into structured transaction data — date, description, debit, credit and running balance for every row — plus account details and totals, exported to a clean CSV for accounting, bookkeeping or loan applications.",
+    dateModified: "2026-06-09",
+    content: [
+      { h2: "Turn a statement into a transactions spreadsheet" },
+      { p: "Bank statement extraction reads an account statement — a PDF or even a phone screenshot — and returns structured data: the account holder, account number, statement period, opening and closing balances, totals, and every transaction row with its date, description, debit, credit and running balance." },
+      { h2: "Why it's hard by hand (and easy with AI)" },
+      { p: "Statements come in endless layouts, and a single month can hold hundreds of rows. Re-typing them for bookkeeping, expense analysis, or a loan/visa application is painful and error-prone. InvoiceParsed reads the whole statement in one pass and gives you a clean table you can export." },
+      { h2: "What gets captured" },
+      { ul: [
+        "Account holder, account number and bank/wallet name",
+        "Statement period, opening & closing balance, total debit & credit",
+        "Every transaction: date, description, debit, credit, running balance, reference",
+        "A confidence score so you can spot rows worth a quick check",
+      ] },
+      { h2: "Works on screenshots too" },
+      { p: "Mobile banking and wallet apps (e.g. OPay, Kuda, Cash App) often only give you a screenshot or a flat PDF. InvoiceParsed handles those directly — no need for a special export format." },
+      { h2: "Export for accounting & analysis" },
+      { p: "Download the transactions as a CSV (date, description, debit, credit, balance, reference) ready for Excel, Google Sheets or your accounting tool, or pull the structured JSON via the API." },
+      { h2: "Common uses" },
+      { ul: [
+        "Bookkeeping and reconciliation",
+        "Expense and cash-flow analysis",
+        "Loan, mortgage or visa applications that require statement data",
+        "Migrating historical transactions into accounting software",
+      ] },
+      { h2: "Try it free" },
+      { p: "Pick \"Statement\" on upload and process your first one on the free plan (5 documents/month, no card). You'll get a structured transactions table in seconds." },
+    ],
+    faqs: [
+      { q: "Can it extract data from a bank statement screenshot?", a: "Yes. InvoiceParsed reads statement screenshots and photos as well as PDFs, returning every transaction row as structured data." },
+      { q: "What's included in the export?", a: "A CSV (or JSON) with each transaction's date, description, debit, credit, running balance and reference, plus account details and totals." },
+      { q: "Does it handle wallet apps like OPay or Cash App?", a: "Yes — any bank or wallet account statement works, including the screenshot-style statements those apps produce." },
+    ],
+  },
+  {
     slug: "small-business-accounting",
     title: "Invoice Extraction for Small Business Accounting",
     description:

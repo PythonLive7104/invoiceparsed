@@ -1,84 +1,83 @@
-# Self-hosted database (Postgres) — setup, migration & backups
+# Self-hosting the database (optional)
 
-The app can run on **Supabase** (managed) or a **self-hosted Postgres** container
-(the `db` service in `docker-compose.yml`). It prefers `SUPABASE_URL`; when that's
-blank it uses the local `DATABASE_URL`. So you cut over deliberately — deploying
-the compose change alone does **not** switch you off Supabase.
+**By default the app uses Supabase** (managed, zero RAM on your box). You only
+need this if you want to drop Supabase later — e.g. to avoid its paid tier as you
+grow. Self-hosted Postgres runs as the `db` service in `docker-compose.selfhost.yml`
+and costs ~150 MB RAM. It's a full PostgreSQL 16 — functionally identical to
+Supabase; only backups become your responsibility (handled below).
+
+The app prefers `SUPABASE_URL` over `DATABASE_URL`, and the override blanks
+`SUPABASE_URL`, so the switch is deliberate — nothing changes until you opt in.
 
 ## 1. Prerequisite
 
-Add a strong password to the **root** `.env` (the Compose one, next to
-`docker-compose.yml`):
+Add a strong password to the **root** `.env` (next to `docker-compose.yml`):
 
 ```
-POSTGRES_PASSWORD=<long-random-string>     # python3 -c "import secrets;print(secrets.token_urlsafe(24))"
+POSTGRES_PASSWORD=<long-random>     # python3 -c "import secrets;print(secrets.token_urlsafe(24))"
 ```
 
-## 2. Start Postgres (still on Supabase at this point)
+## 2. Start only Postgres (app stays on Supabase)
 
 ```bash
 cd ~/invoiceparsed
 git pull
-docker compose up -d db          # brings up Postgres; app still uses Supabase
-docker compose ps                # db should be "healthy"
+docker compose -f docker-compose.yml -f docker-compose.selfhost.yml up -d db
+docker compose -f docker-compose.yml -f docker-compose.selfhost.yml ps   # db "healthy"
 ```
 
 ## 3. Migrate your data from Supabase → local Postgres
 
-Use Supabase's **direct** connection string (Session mode, port **5432**), not the
-pooler (6543) — `pg_dump` needs a session connection. Find it in the Supabase
-dashboard → Project Settings → Database → Connection string (URI).
+Use Supabase's **direct** connection string (Session mode, port **5432**) — find it
+in Supabase → Project Settings → Database → Connection string (URI). The pooler
+(6543) won't work for `pg_dump`.
 
 ```bash
-# Dump from Supabase and load into the local db, in one shot, inside the db container:
-docker compose exec db sh -c \
+docker compose -f docker-compose.yml -f docker-compose.selfhost.yml exec db sh -c \
   "pg_dump '<SUPABASE_DIRECT_URL>' --no-owner --no-privileges | psql -U invoiceparsed -d invoiceparsed"
 ```
 
-Spot-check the data landed:
+Verify:
 
 ```bash
-docker compose exec db psql -U invoiceparsed -d invoiceparsed -c \
-  "select count(*) as users from users; select count(*) as extractions from extractions;"
+docker compose -f docker-compose.yml -f docker-compose.selfhost.yml exec db \
+  psql -U invoiceparsed -d invoiceparsed -c "select count(*) from users; select count(*) from extractions;"
 ```
 
 ## 4. Cut over
 
-In **`backend/.env`**, blank the Supabase URL so the app uses the local Postgres:
+Persist the file list in the root `.env` so every command uses both files:
 
 ```
-SUPABASE_URL=
+COMPOSE_FILE=docker-compose.yml:docker-compose.selfhost.yml
+# (if you also use TLS: docker-compose.yml:docker-compose.prod.yml:docker-compose.selfhost.yml)
 ```
 
-Then recreate the backend:
+Then bring everything up — the backend recreates pointing at the local DB:
 
 ```bash
-docker compose up -d --force-recreate backend
-docker compose logs backend | tail   # should connect to db, no errors
+docker compose up -d --build
+docker compose logs backend | tail    # connects to db, no errors
 ```
 
-Log in and confirm your account/plan/history are intact. Done — you're on the
-self-hosted database.
+Log in and confirm your account/plan/history are intact. Done.
 
 ## 5. Backups (important)
 
-The `db-backup` service writes a daily gzipped dump to `./backups` (keeps the last
-7). Verify:
+`db-backup` writes a daily gzip to `./backups` (keeps the last 7):
 
 ```bash
 docker compose logs db-backup | tail
 ls -lh ~/invoiceparsed/backups
 ```
 
-⚠️ A backup on the same disk won't survive disk failure. **Copy them off-box**
-regularly — e.g. from your laptop:
+⚠️ Same-disk backups won't survive disk failure — **copy them off-box**, e.g.:
 
 ```bash
 scp 'root@<vps-ip>:~/invoiceparsed/backups/*.gz' ~/invoiceparsed-backups/
 ```
-(Or sync to InterServer Storage / S3 on a cron.)
 
-**Restore** from a dump if ever needed:
+**Restore:**
 
 ```bash
 gunzip -c backups/invoiceparsed-YYYYmmdd-HHMMSS.sql.gz | \
@@ -87,15 +86,12 @@ gunzip -c backups/invoiceparsed-YYYYmmdd-HHMMSS.sql.gz | \
 
 ## Rollback to Supabase
 
-Set `SUPABASE_URL=` back to your Supabase string in `backend/.env` and
-`docker compose up -d --force-recreate backend`. (Data written while on local
-Postgres won't be in Supabase unless you migrate it back.)
+Remove `docker-compose.selfhost.yml` from `COMPOSE_FILE` and
+`docker compose up -d --force-recreate backend` (your `backend/.env` SUPABASE_URL
+is used again). Data written while on local Postgres stays only in the local DB.
 
 ## Notes
-- Postgres is **not** exposed to the internet (no published port) — only the
-  backend reaches it as `db:5432`.
-- Tuned for a 2 GB box (`shared_buffers=128MB`, `max_connections=50`). If you bump
-  the VPS RAM later, raise these.
-- New schema columns: the app calls `create_all()` (creates missing tables) but
-  does not alter existing ones — apply `ALTER TABLE` manually for new columns, as
-  with Supabase.
+- Postgres is **not** exposed to the internet (no published port).
+- Tuned for 2 GB (`shared_buffers=128MB`, `max_connections=50`). Raise if you add RAM.
+- New schema columns: the app `create_all()`s missing tables but doesn't alter
+  existing ones — apply `ALTER TABLE` manually (same as with Supabase).

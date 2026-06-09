@@ -45,10 +45,10 @@ export function HistoryTable({ initialItems }) {
         </span>
         <h3 className="mt-5 text-lg font-semibold text-white">No extractions yet</h3>
         <p className="mt-1.5 max-w-xs text-sm text-slate-400">
-          Process your first invoice and it'll show up here.
+          Process your first invoice, receipt or statement and it'll show up here.
         </p>
         <Button to="/dashboard" className="mt-6">
-          Extract an invoice
+          Extract a document
         </Button>
       </div>
     );

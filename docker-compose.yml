@@ -1,62 +1,16 @@
-# InvoiceParsed — production compose.
+# InvoiceParsed — production compose (default: managed DB via Supabase).
 #
 #   docker compose up -d --build
 #
-# Self-hosted Postgres (db) replaces Supabase. The app prefers SUPABASE_URL over
-# DATABASE_URL, so it stays on Supabase until you blank SUPABASE_URL in
-# backend/.env (see DB.md for the migration runbook). OpenAI/Resend are external.
-# Secrets come from backend/.env and the root .env (Compose vars).
+# The database (Supabase), OpenAI and Resend are external services, so this runs
+# the Flask API, an nginx that serves the SPA + proxies /api, and Redis for
+# rate-limit state. Secrets come from backend/.env and the root .env.
+#
+# To self-host Postgres instead of Supabase (saves the Supabase paid tier, costs
+# ~150 MB RAM), add the opt-in override and follow DB.md:
+#   docker compose -f docker-compose.yml -f docker-compose.selfhost.yml up -d
 
 services:
-  db:
-    image: postgres:16-alpine
-    restart: unless-stopped
-    environment:
-      POSTGRES_USER: invoiceparsed
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in the root .env}
-      POSTGRES_DB: invoiceparsed
-    # Tuned for a small (2 GB) box. Not published to the host → only reachable as
-    # db:5432 on the internal network (never exposed to the internet).
-    command:
-      - postgres
-      - -c
-      - shared_buffers=128MB
-      - -c
-      - max_connections=50
-    volumes:
-      - pgdata:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U invoiceparsed -d invoiceparsed"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  # Daily pg_dump → ./backups (keeps the last 7). Copy these OFF the box too
-  # (a same-disk backup won't survive disk failure) — see DB.md.
-  db-backup:
-    image: postgres:16-alpine
-    restart: unless-stopped
-    depends_on:
-      db:
-        condition: service_healthy
-    environment:
-      PGPASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in the root .env}
-    volumes:
-      - ./backups:/backups
-    entrypoint: ["/bin/sh", "-c"]
-    command:
-      - |
-        while true; do
-          ts=$$(date +%Y%m%d-%H%M%S)
-          if pg_dump -h db -U invoiceparsed -d invoiceparsed | gzip > /backups/invoiceparsed-$$ts.sql.gz; then
-            echo "[db-backup] wrote invoiceparsed-$$ts.sql.gz"
-          else
-            echo "[db-backup] FAILED at $$ts"; rm -f /backups/invoiceparsed-$$ts.sql.gz
-          fi
-          ls -1t /backups/invoiceparsed-*.sql.gz 2>/dev/null | tail -n +8 | xargs -r rm -f
-          sleep 86400
-        done
-
   redis:
     image: redis:7-alpine
     restart: unless-stopped
@@ -74,9 +28,6 @@ services:
     environment:
       # Shared rate-limit store across gunicorn workers (overrides .env memory://).
       RATELIMIT_STORAGE_URI: redis://redis:6379/0
-      # Local Postgres connection. Only used when SUPABASE_URL is blank in
-      # backend/.env (the app prefers SUPABASE_URL). Lets you cut over safely.
-      DATABASE_URL: postgresql://invoiceparsed:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in the root .env}@db:5432/invoiceparsed
     restart: unless-stopped
     expose:
       - "5000"
@@ -84,8 +35,6 @@ services:
       - uploads:/app/uploads
     depends_on:
       redis:
-        condition: service_healthy
-      db:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:5000/api/health').status==200 else 1)"]
@@ -113,4 +62,3 @@ services:
 
 volumes:
   uploads:
-  pgdata:

@@ -57,7 +57,7 @@ export default function DashboardHome() {
 
             <div className="mt-4 space-y-1">
               {recent.length === 0 ? (
-                <p className="py-4 text-center text-sm text-slate-500">No invoices yet.</p>
+                <p className="py-4 text-center text-sm text-slate-500">No documents yet.</p>
               ) : (
                 recent.map((r) => (
                   <Link

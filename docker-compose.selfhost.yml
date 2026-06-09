@@ -1,0 +1,69 @@
+# OPT-IN: self-hosted Postgres instead of Supabase. Adds ~150 MB RAM.
+# Enable with both files (see DB.md for the migration runbook):
+#
+#   POSTGRES_PASSWORD=... \
+#     docker compose -f docker-compose.yml -f docker-compose.selfhost.yml up -d --build
+#
+# Or persist it via the root .env: COMPOSE_FILE=docker-compose.yml:docker-compose.selfhost.yml
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: invoiceparsed
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in the root .env}
+      POSTGRES_DB: invoiceparsed
+    command:
+      - postgres
+      - -c
+      - shared_buffers=128MB
+      - -c
+      - max_connections=50
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U invoiceparsed -d invoiceparsed"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  db-backup:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PGPASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in the root .env}
+    volumes:
+      - ./backups:/backups
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        while true; do
+          ts=$$(date +%Y%m%d-%H%M%S)
+          if pg_dump -h db -U invoiceparsed -d invoiceparsed | gzip > /backups/invoiceparsed-$$ts.sql.gz; then
+            echo "[db-backup] wrote invoiceparsed-$$ts.sql.gz"
+          else
+            echo "[db-backup] FAILED at $$ts"; rm -f /backups/invoiceparsed-$$ts.sql.gz
+          fi
+          ls -1t /backups/invoiceparsed-*.sql.gz 2>/dev/null | tail -n +8 | xargs -r rm -f
+          sleep 86400
+        done
+
+  backend:
+    # Point the app at the local Postgres and disable Supabase so DATABASE_URL is
+    # used. (The app prefers SUPABASE_URL; blanking it here forces the local DB.)
+    environment:
+      RATELIMIT_STORAGE_URI: redis://redis:6379/0
+      SUPABASE_URL: ""
+      DATABASE_URL: postgresql://invoiceparsed:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in the root .env}@db:5432/invoiceparsed
+    depends_on:
+      redis:
+        condition: service_healthy
+      db:
+        condition: service_healthy
+
+volumes:
+  pgdata:

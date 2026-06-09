@@ -123,7 +123,7 @@ def extract():
         return (
             jsonify({
                 "error": f"You've reached your {usage['planName']} plan limit of "
-                         f"{usage['limit']} invoices this month.",
+                         f"{usage['limit']} documents this month.",
                 "code": "LIMIT_REACHED",
                 "usage": usage,
             }),

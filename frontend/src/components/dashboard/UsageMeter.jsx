@@ -31,7 +31,7 @@ export function UsageMeter({ usage, compact = false }) {
       {unlimited ? (
         <div className="mt-2.5 flex items-center gap-2 text-white">
           <InfinityIcon size={18} className="text-brand-300" />
-          <span className="text-sm font-medium">{usage.used} invoices · Unlimited</span>
+          <span className="text-sm font-medium">{usage.used} documents · Unlimited</span>
         </div>
       ) : (
         <>
