@@ -11,7 +11,6 @@ import {
   X,
 } from "lucide-react";
 import { Logo } from "@/components/ui/Logo";
-import { ThemeToggle } from "@/components/ui/ThemeToggle";
 import { UsageMeter } from "@/components/dashboard/UsageMeter";
 import { cn, initials } from "@/lib/utils";
 import { useAuth } from "@/lib/auth.jsx";
@@ -77,7 +76,6 @@ export default function DashboardShell() {
             </div>
             <div className="truncate text-xs capitalize text-slate-500">{user?.plan} plan</div>
           </div>
-          <ThemeToggle className="h-8 w-8" />
           <button
             onClick={onLogout}
             title="Sign out"
@@ -98,16 +96,13 @@ export default function DashboardShell() {
 
       <div className="flex items-center justify-between border-b border-white/[0.06] bg-ink-950/80 px-4 py-3 backdrop-blur-xl lg:hidden">
         <Logo to="/" />
-        <div className="flex items-center gap-1">
-          <ThemeToggle />
-          <button
-            onClick={() => setOpen(true)}
-            className="grid h-10 w-10 place-items-center rounded-lg text-slate-200 hover:bg-white/[0.06]"
-            aria-label="Open menu"
-          >
-            <Menu size={20} />
-          </button>
-        </div>
+        <button
+          onClick={() => setOpen(true)}
+          className="grid h-10 w-10 place-items-center rounded-lg text-slate-200 hover:bg-white/[0.06]"
+          aria-label="Open menu"
+        >
+          <Menu size={20} />
+        </button>
       </div>
 
       {open && (

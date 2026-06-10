@@ -2,7 +2,6 @@ import { useEffect, useState } from "react";
 import { Menu, X } from "lucide-react";
 import { Logo } from "@/components/ui/Logo";
 import { Button } from "@/components/ui/Button";
-import { ThemeToggle } from "@/components/ui/ThemeToggle";
 import { useAuth } from "@/lib/auth.jsx";
 import { cn } from "@/lib/utils";
 
@@ -50,7 +49,6 @@ export function MarketingNav() {
         </div>
 
         <div className="hidden items-center gap-2 md:flex">
-          <ThemeToggle />
           {user ? (
             <Button to="/dashboard" size="sm">
               Go to dashboard
@@ -67,16 +65,13 @@ export function MarketingNav() {
           )}
         </div>
 
-        <div className="flex items-center gap-1 md:hidden">
-          <ThemeToggle />
-          <button
-            className="grid h-10 w-10 place-items-center rounded-lg text-slate-200 hover:bg-white/[0.06]"
-            onClick={() => setOpen((o) => !o)}
-            aria-label="Toggle menu"
-          >
-            {open ? <X size={20} /> : <Menu size={20} />}
-          </button>
-        </div>
+        <button
+          className="grid h-10 w-10 place-items-center rounded-lg text-slate-200 hover:bg-white/[0.06] md:hidden"
+          onClick={() => setOpen((o) => !o)}
+          aria-label="Toggle menu"
+        >
+          {open ? <X size={20} /> : <Menu size={20} />}
+        </button>
       </nav>
 
       {open && (

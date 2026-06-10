@@ -4,11 +4,6 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <!-- Apply theme before paint (default light) to avoid a flash. -->
-    <script>
-      try { if (localStorage.getItem("ia_theme") !== "dark") document.documentElement.classList.add("light"); }
-      catch (e) { document.documentElement.classList.add("light"); }
-    </script>
     <!-- SEO:START — replaced per-route by scripts/prerender.mjs at build time.
          For app routes (not prerendered) this stays as the site-wide default
          floor for crawlers that don't execute JS; React's <SEO/> refines it. -->
