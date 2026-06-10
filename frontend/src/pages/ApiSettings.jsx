@@ -332,23 +332,98 @@ function WebhooksSection() {
   );
 }
 
-function DocsSection() {
-  const curl = `curl -X POST ${API_URL}/api/extract \\
+const SNIPPETS = {
+  cURL: `curl -X POST ${API_URL}/api/extract \\
   -H "Authorization: Bearer ip_live_..." \\
-  -F "file=@invoice.pdf"`;
+  -F "file=@invoice.pdf" \\
+  -F "doc_type=invoice"   # invoice | receipt | statement`,
+
+  Python: `import requests
+
+with open("invoice.pdf", "rb") as f:
+    resp = requests.post(
+        "${API_URL}/api/extract",
+        headers={"Authorization": "Bearer ip_live_..."},
+        files={"file": f},
+        data={"doc_type": "invoice"},  # invoice | receipt | statement
+    )
+
+resp.raise_for_status()
+print(resp.json()["invoice"])`,
+
+  "Node.js": `import fs from "node:fs";
+
+const form = new FormData();
+form.append("file", new Blob([fs.readFileSync("invoice.pdf")]), "invoice.pdf");
+form.append("doc_type", "invoice"); // invoice | receipt | statement
+
+const res = await fetch("${API_URL}/api/extract", {
+  method: "POST",
+  headers: { Authorization: "Bearer ip_live_..." },
+  body: form,
+});
+
+const data = await res.json();
+console.log(data.invoice);`,
+};
+
+const SAMPLE_RESPONSE = `{
+  "id": "a1b2c3...",
+  "docType": "invoice",
+  "fileName": "invoice.pdf",
+  "status": "completed",
+  "invoice": {
+    "vendor": { "name": "Acme Corp", "address": "...", "email": "..." },
+    "invoice_number": "INV-2024-0042",
+    "invoice_date": "2024-03-15",
+    "due_date": "2024-04-14",
+    "currency": "USD",
+    "line_items": [
+      { "description": "Design work", "quantity": 2, "unit_price": 750, "amount": 1500 }
+    ],
+    "subtotal": 1500.00, "tax": 120.00, "total": 1620.00,
+    "confidence": { "total": 0.99, "vendor": 0.97 }
+  }
+}`;
+
+function DocsSection() {
+  const langs = Object.keys(SNIPPETS);
+  const [lang, setLang] = useState(langs[0]);
 
   return (
     <Section
       icon={<Terminal size={19} />}
       title="Quick start"
-      desc="Send a file, get structured JSON back. Use any API key above."
+      desc="POST a file (PDF/JPG/PNG), get structured JSON back. Use any API key above. The same endpoints accept an X-API-Key header instead of Bearer."
     >
       <div className="overflow-hidden rounded-xl border border-white/10 bg-ink-950/70">
-        <div className="flex items-center justify-between border-b border-white/[0.06] px-4 py-2">
-          <span className="text-[11px] text-slate-500">Extract an invoice</span>
-          <CopyButton text={curl} />
+        <div className="flex items-center justify-between border-b border-white/[0.06] pl-2 pr-3">
+          <div className="flex">
+            {langs.map((l) => (
+              <button
+                key={l}
+                onClick={() => setLang(l)}
+                className={cn(
+                  "px-3 py-2 text-xs font-medium transition-colors",
+                  l === lang ? "text-white" : "text-slate-500 hover:text-slate-300",
+                )}
+              >
+                {l}
+                {l === lang && <span className="mt-1.5 block h-0.5 rounded-full bg-brand-400" />}
+              </button>
+            ))}
+          </div>
+          <CopyButton text={SNIPPETS[lang]} />
         </div>
-        <pre className="overflow-x-auto p-4 font-mono text-[12.5px] leading-relaxed text-slate-300">{curl}</pre>
+        <pre className="overflow-x-auto p-4 font-mono text-[12.5px] leading-relaxed text-slate-300">{SNIPPETS[lang]}</pre>
+      </div>
+
+      <div className="mt-4 overflow-hidden rounded-xl border border-white/10 bg-ink-950/70">
+        <div className="flex items-center justify-between border-b border-white/[0.06] px-4 py-2">
+          <span className="text-[11px] text-slate-500">Example response (200 OK)</span>
+          <CopyButton text={SAMPLE_RESPONSE} />
+        </div>
+        <pre className="max-h-72 overflow-auto p-4 font-mono text-[12.5px] leading-relaxed text-slate-300">{SAMPLE_RESPONSE}</pre>
       </div>
 
       <div className="mt-4 flex items-start gap-2.5 rounded-xl border border-white/[0.07] bg-white/[0.02] p-4 text-sm text-slate-400">
