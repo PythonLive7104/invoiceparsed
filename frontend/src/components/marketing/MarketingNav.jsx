@@ -1,16 +1,30 @@
 import { useEffect, useState } from "react";
 import { Menu, X } from "lucide-react";
+import { Link } from "react-router-dom";
 import { Logo } from "@/components/ui/Logo";
 import { Button } from "@/components/ui/Button";
 import { useAuth } from "@/lib/auth.jsx";
 import { cn } from "@/lib/utils";
 
+// Section anchors point at the landing page (/#…) so they work from any page;
+// Pricing and API go to their dedicated pages.
 const links = [
-  { href: "#features", label: "Features" },
-  { href: "#how", label: "How it works" },
-  { href: "#pricing", label: "Pricing" },
-  { href: "#api", label: "API" },
+  { href: "/#features", label: "Features" },
+  { href: "/#how", label: "How it works" },
+  { to: "/pricing", label: "Pricing" },
+  { to: "/docs", label: "API" },
 ];
+
+const NAV_CLS = "rounded-lg px-3.5 py-2 text-sm text-slate-300 transition-colors hover:text-white";
+
+function NavItem({ link, onClick, className }) {
+  const cls = cn(NAV_CLS, className);
+  return link.to ? (
+    <Link to={link.to} onClick={onClick} className={cls}>{link.label}</Link>
+  ) : (
+    <a href={link.href} onClick={onClick} className={cls}>{link.label}</a>
+  );
+}
 
 export function MarketingNav() {
   const { user } = useAuth();
@@ -38,13 +52,7 @@ export function MarketingNav() {
 
         <div className="hidden items-center gap-1 md:flex">
           {links.map((l) => (
-            <a
-              key={l.href}
-              href={l.href}
-              className="rounded-lg px-3.5 py-2 text-sm text-slate-300 transition-colors hover:text-white"
-            >
-              {l.label}
-            </a>
+            <NavItem key={l.label} link={l} />
           ))}
         </div>
 
@@ -78,14 +86,7 @@ export function MarketingNav() {
         <div className="border-t border-white/[0.06] bg-ink-950/95 px-5 py-4 md:hidden">
           <div className="flex flex-col gap-1">
             {links.map((l) => (
-              <a
-                key={l.href}
-                href={l.href}
-                onClick={() => setOpen(false)}
-                className="rounded-lg px-3 py-2.5 text-sm text-slate-300 hover:bg-white/[0.06] hover:text-white"
-              >
-                {l.label}
-              </a>
+              <NavItem key={l.label} link={l} onClick={() => setOpen(false)} className="hover:bg-white/[0.06]" />
             ))}
             {user ? (
               <Button to="/dashboard" size="sm" className="mt-2">
