@@ -27,7 +27,7 @@ const groups = [
   {
     title: "Company",
     links: [
-      { label: "Contact", href: "mailto:support@invoiceparsed.com" },
+      { label: "Contact", to: "/contact" },
       { label: "Privacy", href: "#" },
       { label: "Terms", href: "#" },
     ],

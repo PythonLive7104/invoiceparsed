@@ -16,7 +16,7 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 from config import Config
 from extensions import db, limiter
 from plans import PLANS, PLAN_ORDER
-from routes import auth_bp, billing_bp, extract_bp, keys_bp, webhook_bp
+from routes import auth_bp, billing_bp, extract_bp, keys_bp, support_bp, webhook_bp
 
 
 def _init_sentry(config_class) -> None:
@@ -65,6 +65,7 @@ def create_app(config_class=Config) -> Flask:
     app.register_blueprint(billing_bp)
     app.register_blueprint(keys_bp)
     app.register_blueprint(webhook_bp)
+    app.register_blueprint(support_bp)
 
     # Flask-Admin at /admin (no-op unless ADMIN_USER/ADMIN_PASSWORD are set).
     from admin import init_admin

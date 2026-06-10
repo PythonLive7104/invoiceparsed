@@ -35,6 +35,13 @@ class Config:
     OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
     OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o")
 
+    # Where the contact form sends messages.
+    CONTACT_TO = os.getenv("CONTACT_TO", "invoiceparsed@gmail.com")
+
+    # Rate limits for support endpoints (per IP).
+    RATELIMIT_CHAT = os.getenv("RATELIMIT_CHAT", "20 per minute")
+    RATELIMIT_CONTACT = os.getenv("RATELIMIT_CONTACT", "5 per minute")
+
     # Number of reverse-proxy hops to trust for X-Forwarded-* (real client IP +
     # scheme). 1 = behind nginx only (default Docker). 2 = behind Caddy → nginx
     # (the TLS setup). 0 = no proxy / exposed directly.

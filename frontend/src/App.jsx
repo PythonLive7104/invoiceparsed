@@ -1,6 +1,7 @@
 import { lazy, Suspense } from "react";
 import { Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { useAuth } from "@/lib/auth.jsx";
+import { ChatWidget } from "@/components/support/ChatWidget";
 import Landing from "@/pages/Landing.jsx";
 import { Loader2 } from "lucide-react";
 
@@ -15,6 +16,7 @@ const VerifyEmail = lazy(() => import("@/pages/VerifyEmail.jsx"));
 const Faq = lazy(() => import("@/pages/Faq.jsx"));
 const Pricing = lazy(() => import("@/pages/Pricing.jsx"));
 const About = lazy(() => import("@/pages/About.jsx"));
+const Contact = lazy(() => import("@/pages/Contact.jsx"));
 const BlogIndex = lazy(() => import("@/pages/BlogIndex.jsx"));
 const BlogPost = lazy(() => import("@/pages/BlogPost.jsx"));
 const CompareIndex = lazy(() => import("@/pages/CompareIndex.jsx"));
@@ -55,6 +57,7 @@ function PublicOnly({ children }) {
 
 export default function App() {
   return (
+    <>
     <Suspense fallback={<FullScreenLoader />}>
         <Routes>
           <Route path="/" element={<Landing />} />
@@ -62,6 +65,7 @@ export default function App() {
           {/* Marketing / SEO content */}
           <Route path="/pricing" element={<Pricing />} />
           <Route path="/about" element={<About />} />
+          <Route path="/contact" element={<Contact />} />
           <Route path="/faq" element={<Faq />} />
           <Route path="/blog" element={<BlogIndex />} />
           <Route path="/blog/:slug" element={<BlogPost />} />
@@ -108,5 +112,7 @@ export default function App() {
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
     </Suspense>
+    <ChatWidget />
+    </>
   );
 }

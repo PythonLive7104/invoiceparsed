@@ -11,10 +11,13 @@ from config import Config
 RESEND_ENDPOINT = "https://api.resend.com/emails"
 
 
-def _send(to: str, subject: str, html: str) -> bool:
+def _send(to: str, subject: str, html: str, reply_to: str | None = None) -> bool:
     if not Config.RESEND_API_KEY:
         print(f"[emails] RESEND_API_KEY not set — skipping email '{subject}' to {to}")
         return False
+    payload = {"from": Config.RESEND_FROM, "to": [to], "subject": subject, "html": html}
+    if reply_to:
+        payload["reply_to"] = reply_to
     try:
         resp = httpx.post(
             RESEND_ENDPOINT,
@@ -22,7 +25,7 @@ def _send(to: str, subject: str, html: str) -> bool:
                 "Authorization": f"Bearer {Config.RESEND_API_KEY}",
                 "Content-Type": "application/json",
             },
-            json={"from": Config.RESEND_FROM, "to": [to], "subject": subject, "html": html},
+            json=payload,
             timeout=10,
         )
         if not resp.is_success:
@@ -31,6 +34,27 @@ def _send(to: str, subject: str, html: str) -> bool:
     except Exception as exc:  # noqa: BLE001
         print(f"[emails] Resend request failed: {exc}")
         return False
+
+
+def _escape(text: str) -> str:
+    return (
+        (text or "")
+        .replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+        .replace("\n", "<br>")
+    )
+
+
+def send_contact(name: str, email: str, message: str) -> bool:
+    """Deliver a contact-form submission to the team inbox (reply-to the sender)."""
+    body = f"""\
+    <p style="color:#94a3b8;font-size:14px;line-height:1.6"><b>From:</b> {_escape(name)} &lt;{_escape(email)}&gt;</p>
+    <p style="color:#e2e8f0;font-size:14px;line-height:1.7;white-space:pre-wrap">{_escape(message)}</p>"""
+    return _send(
+        Config.CONTACT_TO,
+        f"InvoiceParsed contact — {name or email}",
+        _layout("New contact message", body),
+        reply_to=email or None,
+    )
 
 
 def _layout(title: str, body_html: str) -> str:
