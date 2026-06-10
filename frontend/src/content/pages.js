@@ -29,6 +29,13 @@ export const PAGE_META = {
       "Answers to common questions about InvoiceParsed: accuracy, supported file formats, pricing, the free plan, API access and more.",
     schema: ["faq"],
   },
+  "/docs": {
+    title: "API Documentation — InvoiceParsed",
+    titleRaw: true,
+    description:
+      "InvoiceParsed REST API docs: extract invoices, receipts and bank statements via /api/extract. Auth, endpoints, code examples (cURL, Python, Node.js) and webhooks.",
+    schema: [],
+  },
   "/contact": {
     title: "Contact InvoiceParsed",
     description:

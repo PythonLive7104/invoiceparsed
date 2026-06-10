@@ -220,9 +220,12 @@ export default function Landing() {
                   POST a file, get structured JSON back. Wire InvoiceParsed into your accounting
                   workflow, ERP, or internal tools. Available on the Pro plan.
                 </p>
-                <div className="mt-7">
-                  <Button to="/signup" variant="secondary">
-                    Get API access <ArrowRight size={16} />
+                <div className="mt-7 flex flex-wrap gap-3">
+                  <Button to="/docs" variant="secondary">
+                    Read the API docs <ArrowRight size={16} />
+                  </Button>
+                  <Button to="/signup" variant="outline">
+                    Get API access
                   </Button>
                 </div>
               </Reveal>

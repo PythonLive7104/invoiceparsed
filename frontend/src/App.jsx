@@ -17,6 +17,7 @@ const Faq = lazy(() => import("@/pages/Faq.jsx"));
 const Pricing = lazy(() => import("@/pages/Pricing.jsx"));
 const About = lazy(() => import("@/pages/About.jsx"));
 const Contact = lazy(() => import("@/pages/Contact.jsx"));
+const ApiDocs = lazy(() => import("@/pages/ApiDocs.jsx"));
 const BlogIndex = lazy(() => import("@/pages/BlogIndex.jsx"));
 const BlogPost = lazy(() => import("@/pages/BlogPost.jsx"));
 const CompareIndex = lazy(() => import("@/pages/CompareIndex.jsx"));
@@ -66,6 +67,7 @@ export default function App() {
           <Route path="/pricing" element={<Pricing />} />
           <Route path="/about" element={<About />} />
           <Route path="/contact" element={<Contact />} />
+          <Route path="/docs" element={<ApiDocs />} />
           <Route path="/faq" element={<Faq />} />
           <Route path="/blog" element={<BlogIndex />} />
           <Route path="/blog/:slug" element={<BlogPost />} />
