@@ -31,11 +31,12 @@ export function ChatWidget() {
     setLoading(true);
     try {
       const { data } = await api.post("/api/chat", { message: q });
-      setMessages((m) => [...m, { role: "assistant", text: data.reply }]);
+      setMessages((m) => [...m, { role: "assistant", text: data.reply, intent: data.intent }]);
     } catch {
       setMessages((m) => [...m, {
         role: "assistant",
-        text: "Sorry, I couldn't reach the assistant. Please try the contact form at /contact.",
+        text: "Sorry, I couldn't reach the assistant right now.",
+        intent: "fallback",
       }]);
     } finally {
       setLoading(false);
@@ -69,7 +70,7 @@ export function ChatWidget() {
           {/* Messages */}
           <div className="flex-1 space-y-3 overflow-y-auto px-4 py-4">
             {messages.map((m, i) => (
-              <div key={i} className={cn("flex", m.role === "user" ? "justify-end" : "justify-start")}>
+              <div key={i} className={cn("flex flex-col", m.role === "user" ? "items-end" : "items-start")}>
                 <div
                   className={cn(
                     "max-w-[85%] whitespace-pre-wrap rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed",
@@ -80,6 +81,15 @@ export function ChatWidget() {
                 >
                   {m.text}
                 </div>
+                {m.role === "assistant" && (m.intent === "fallback" || m.intent === "contact") && (
+                  <Link
+                    to="/contact"
+                    onClick={() => setOpen(false)}
+                    className="mt-1.5 inline-flex items-center gap-1 rounded-lg border border-brand-400/30 bg-brand-500/10 px-2.5 py-1 text-xs font-medium text-brand-200 transition-colors hover:bg-brand-500/20"
+                  >
+                    Contact us →
+                  </Link>
+                )}
               </div>
             ))}
 
