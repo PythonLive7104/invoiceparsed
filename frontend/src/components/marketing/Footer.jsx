@@ -68,7 +68,11 @@ export function Footer() {
         ))}
       </div>
       <div className="container-page mt-12 flex flex-col items-center justify-between gap-3 border-t border-white/[0.06] pt-6 text-sm text-slate-500 sm:flex-row">
-        <p>© {new Date().getFullYear()} InvoiceParsed. All rights reserved.</p>
+        <p>
+          © {new Date().getFullYear()} InvoiceParsed — a product of{" "}
+          <span className="font-medium text-slate-400">MAILIONDEV TECHNOLOGY LTD</span> (RC 9233525).
+          All rights reserved.
+        </p>
         <p className="flex items-center gap-2">
           <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
           All systems operational
