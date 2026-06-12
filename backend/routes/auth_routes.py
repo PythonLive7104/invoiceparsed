@@ -140,23 +140,32 @@ def google_callback():
     POST here with the ID token and a CSRF token. We verify the double-submit
     cookie, exchange the credential for a session, then bounce the browser back
     to the SPA with the JWT in the URL fragment (kept out of server logs)."""
+    log = current_app.logger
     app_url = current_app.config["APP_URL"].rstrip("/")
+
+    credential = request.form.get("credential")
+    cookie_csrf = request.cookies.get("g_csrf_token")
+    body_csrf = request.form.get("g_csrf_token")
+    log.info(
+        "Google callback hit. has_credential=%s cookie_csrf=%s body_csrf=%s app_url=%s",
+        bool(credential), bool(cookie_csrf), bool(body_csrf), app_url,
+    )
 
     # Double-submit cookie check, per Google's redirect-mode guidance. The
     # signed ID token (verified below) is the real authenticity guarantee; this
     # only mitigates login-CSRF. Skip when the cookie is absent — it isn't sent
     # when the SPA and API live on different subdomains.
-    cookie_csrf = request.cookies.get("g_csrf_token")
-    body_csrf = request.form.get("g_csrf_token")
     if cookie_csrf and body_csrf and cookie_csrf != body_csrf:
+        log.warning("Google sign-in failed: CSRF token mismatch (cookie vs body).")
         return redirect(f"{app_url}/login?error=google")
 
-    info = verify_google_token(request.form.get("credential"))
+    info = verify_google_token(credential)
     if info is None:
         return redirect(f"{app_url}/login?error=google")
 
     user = _upsert_google_user(info)
     token = issue_token(user)
+    log.info("Google sign-in OK for %s; redirecting to SPA with token.", info.get("email"))
     return redirect(f"{app_url}/auth/google#token={token}")
 
 
