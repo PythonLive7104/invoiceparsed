@@ -33,7 +33,12 @@ class Config:
 
     # OpenAI
     OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
-    OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o")
+    # Default extraction model. gpt-4o-mini is far cheaper; override per document
+    # type below (e.g. keep statements on gpt-4o if mini's accuracy drops).
+    OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+    MODEL_INVOICE = os.getenv("MODEL_INVOICE", OPENAI_MODEL)
+    MODEL_RECEIPT = os.getenv("MODEL_RECEIPT", OPENAI_MODEL)
+    MODEL_STATEMENT = os.getenv("MODEL_STATEMENT", OPENAI_MODEL)
 
     # Where the contact form sends messages.
     CONTACT_TO = os.getenv("CONTACT_TO", "invoiceparsed@gmail.com")

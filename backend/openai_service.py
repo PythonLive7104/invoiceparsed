@@ -126,6 +126,11 @@ def extract_document(pages: list[dict], doc_type: str = "invoice") -> dict:
         raise RuntimeError("No pages provided for extraction.")
     prompt, schema, schema_name, normalizer = _DOC_TYPES.get(doc_type, _DOC_TYPES["invoice"])
     label = {"receipt": "receipt", "statement": "bank statement"}.get(doc_type, "invoice")
+    model = {
+        "invoice": Config.MODEL_INVOICE,
+        "receipt": Config.MODEL_RECEIPT,
+        "statement": Config.MODEL_STATEMENT,
+    }.get(doc_type, Config.OPENAI_MODEL)
 
     intro = (
         f"This {label} spans {len(pages)} pages/files provided below, in order. "
@@ -140,7 +145,7 @@ def extract_document(pages: list[dict], doc_type: str = "invoice") -> dict:
         user_content.append(_content_part(page))
 
     completion = _get_client().chat.completions.create(
-        model=Config.OPENAI_MODEL,
+        model=model,
         temperature=0,
         messages=[
             {"role": "system", "content": prompt},
