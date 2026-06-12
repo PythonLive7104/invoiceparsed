@@ -79,11 +79,11 @@ PLANS = {
         # Bank statements are far costlier to extract than invoices/receipts, so
         # they get their own monthly allowance even though invoices/receipts are
         # unlimited. None would mean unlimited statements.
-        "statementLimit": 300,
+        "statementLimit": 200,
         "features": [
             "Everything in Pro",
             "Unlimited invoices & receipts",
-            "300 bank statements / month",
+            "200 bank statements / month",
             "Centralized billing & invoicing",
             "Priority support + onboarding",
         ],

@@ -72,11 +72,11 @@ export const PLANS = {
     api: true,
     webhooks: true,
     statements: true,
-    statementLimit: 300,
+    statementLimit: 200,
     features: [
       "Everything in Pro",
       "Unlimited invoices & receipts",
-      "300 bank statements / month",
+      "200 bank statements / month",
       "Centralized billing & invoicing",
       "Priority support + onboarding",
     ],

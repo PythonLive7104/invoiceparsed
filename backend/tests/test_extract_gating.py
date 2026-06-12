@@ -209,7 +209,7 @@ def test_usage_includes_statement_allowance(client, app):
     assert r.status_code == 200
     st = r.get_json()["usage"]["statements"]
     assert st["allowed"] is True
-    assert st["limit"] == 300
+    assert st["limit"] == 200
     assert st["used"] == 0
     assert st["atLimit"] is False
 
