@@ -132,8 +132,13 @@ def verify_google_token(credential: str) -> dict | None:
     Uses Google's tokeninfo endpoint (no extra dependencies). For high volume,
     switch to local verification with the `google-auth` library.
     """
+    log = current_app.logger
     client_id = current_app.config["GOOGLE_CLIENT_ID"]
-    if not client_id or not credential:
+    if not client_id:
+        log.warning("Google sign-in failed: backend GOOGLE_CLIENT_ID is not configured.")
+        return None
+    if not credential:
+        log.warning("Google sign-in failed: no credential in request.")
         return None
     try:
         resp = httpx.get(
@@ -141,17 +146,26 @@ def verify_google_token(credential: str) -> dict | None:
             params={"id_token": credential},
             timeout=10,
         )
-    except Exception:
+    except Exception as exc:  # noqa: BLE001
+        log.warning("Google sign-in failed: cannot reach Google tokeninfo (%s).", exc)
         return None
     if resp.status_code != 200:
+        log.warning("Google sign-in failed: tokeninfo returned %s (token invalid/expired).", resp.status_code)
         return None
     data = resp.json()
     if data.get("aud") != client_id:
+        log.warning(
+            "Google sign-in failed: aud mismatch. Token aud=%r but backend "
+            "GOOGLE_CLIENT_ID=%r — the frontend and backend client IDs differ.",
+            data.get("aud"), client_id,
+        )
         return None
     if str(data.get("email_verified", "")).lower() != "true":
+        log.warning("Google sign-in failed: email not verified on the Google account.")
         return None
     email = (data.get("email") or "").lower()
     if not email:
+        log.warning("Google sign-in failed: token carried no email.")
         return None
     return {
         "sub": data.get("sub"),
