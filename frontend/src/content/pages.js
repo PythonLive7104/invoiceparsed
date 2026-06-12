@@ -13,20 +13,20 @@ export const PAGE_META = {
     title: "Pricing — InvoiceParsed",
     titleRaw: true,
     description:
-      "Simple invoice extraction pricing. Start free with 5 invoices/month, or scale to Starter, Pro and Business plans with batch, API and webhooks.",
+      "Pricing for invoice, receipt and bank statement extraction. Start free with 5 documents/month, then scale to Starter, Pro and Business with API access.",
     schema: ["faq"],
   },
   "/about": {
     title: "About InvoiceParsed",
     description:
-      "InvoiceParsed helps freelancers and small businesses eliminate manual invoice data entry with fast, accurate AI extraction. Learn about our mission.",
+      "InvoiceParsed helps freelancers and small businesses eliminate manual data entry from invoices, receipts and bank statements with fast, accurate AI extraction. Learn about our mission.",
     schema: [],
   },
   "/faq": {
     title: "InvoiceParsed FAQ — AI invoice extraction questions",
     titleRaw: true,
     description:
-      "Answers to common questions about InvoiceParsed: accuracy, supported file formats, pricing, the free plan, API access and more.",
+      "Answers to common questions about InvoiceParsed: accuracy, supported formats for invoices, receipts and bank statements, pricing, the free plan, API access and more.",
     schema: ["faq"],
   },
   "/docs": {
@@ -45,21 +45,21 @@ export const PAGE_META = {
   "/blog": {
     title: "Blog — invoice automation guides",
     description:
-      "Guides on AI invoice extraction, OCR, and automating invoice data entry for freelancers and small businesses.",
+      "Guides on AI extraction for invoices, receipts and bank statements, OCR, and automating financial data entry for freelancers and small businesses.",
     schema: [],
   },
   "/compare": {
     title: "Comparisons — InvoiceParsed",
     titleRaw: true,
     description:
-      "How InvoiceParsed compares to manual data entry and traditional OCR for extracting invoice and receipt data.",
+      "How InvoiceParsed compares to manual data entry and traditional OCR for extracting invoice, receipt and bank statement data.",
     schema: [],
   },
   "/use-cases": {
     title: "Use cases — InvoiceParsed",
     titleRaw: true,
     description:
-      "How freelancers, small businesses and finance teams use InvoiceParsed to automate invoice and receipt data extraction.",
+      "How freelancers, small businesses and finance teams use InvoiceParsed to automate invoice, receipt and bank statement data extraction.",
     schema: [],
   },
 };

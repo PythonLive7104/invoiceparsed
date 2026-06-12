@@ -15,9 +15,10 @@ from extensions import db
 from invoice_schema import normalize as normalize_invoice
 from receipt_schema import normalize as normalize_receipt
 from statement_schema import normalize as normalize_statement
-from models import Extraction, User
+from models import Extraction
 from openai_service import extract_document
-from plans import build_usage, plan_allows, start_of_month
+from plans import plan_allows
+from usage import usage_for
 from webhooks import dispatch
 
 extract_bp = Blueprint("extract", __name__, url_prefix="/api")
@@ -38,16 +39,6 @@ def _safe_name(row) -> str:
     """Filesystem-safe base name for an export download."""
     raw = row.invoice_number or row.vendor_name or row.id
     return "".join(c if c.isalnum() or c in "-_" else "_" for c in raw)
-
-
-def _count_usage(user: User) -> int:
-    return (
-        Extraction.query.filter(
-            Extraction.user_id == user.id,
-            Extraction.status == "completed",
-            Extraction.created_at >= start_of_month(),
-        ).count()
-    )
 
 
 # ─── Original-file storage ───────────────────────────────────────────────────
@@ -125,7 +116,7 @@ def extract():
     user = g.user
 
     # Enforce plan limits before spending an API call.
-    usage = build_usage(_count_usage(user), user.plan)
+    usage = usage_for(user)
     if usage["atLimit"]:
         return (
             jsonify({
@@ -149,17 +140,30 @@ def extract():
     if doc_type not in DOC_TYPES:
         doc_type = "invoice"
 
-    # Bank statements are a Business-plan capability (beta, while accuracy is
-    # validated).
-    if doc_type == "statement" and not plan_allows(user.plan, "statements"):
-        return (
-            jsonify({
-                "error": "Bank statement extraction is a Business-plan feature.",
-                "code": "UPGRADE_REQUIRED",
-                "capability": "statements",
-            }),
-            402,
-        )
+    # Bank statements are a Business-plan capability with their own monthly
+    # allowance (they're far costlier to extract than invoices/receipts).
+    if doc_type == "statement":
+        if not plan_allows(user.plan, "statements"):
+            return (
+                jsonify({
+                    "error": "Bank statement extraction is a Business-plan feature.",
+                    "code": "UPGRADE_REQUIRED",
+                    "capability": "statements",
+                }),
+                402,
+            )
+        stmt = usage["statements"]
+        if stmt["atLimit"]:
+            return (
+                jsonify({
+                    "error": f"You've used all {stmt['limit']} bank statements included "
+                             f"in your {usage['planName']} plan this month.",
+                    "code": "LIMIT_REACHED",
+                    "capability": "statements",
+                    "usage": usage,
+                }),
+                402,
+            )
 
     mode = (request.form.get("mode") or "single").lower()
 
@@ -240,7 +244,7 @@ def extract():
         payload,
     )
 
-    return jsonify({**payload, "usage": build_usage(_count_usage(user), user.plan)})
+    return jsonify({**payload, "usage": usage_for(user)})
 
 
 @extract_bp.get("/extractions")

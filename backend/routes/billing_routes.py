@@ -10,26 +10,17 @@ from flask import Blueprint, current_app, g, jsonify, request
 import billing
 from auth import login_required
 from extensions import db
-from models import Extraction, User
-from plans import PLANS, build_usage, start_of_month
+from models import User
+from plans import PLANS
+from usage import usage_for
 
 billing_bp = Blueprint("billing", __name__, url_prefix="/api")
-
-
-def _count_usage(user: User) -> int:
-    return (
-        Extraction.query.filter(
-            Extraction.user_id == user.id,
-            Extraction.status == "completed",
-            Extraction.created_at >= start_of_month(),
-        ).count()
-    )
 
 
 @billing_bp.get("/usage")
 @login_required
 def usage():
-    return jsonify({"usage": build_usage(_count_usage(g.user), g.user.plan)})
+    return jsonify({"usage": usage_for(g.user)})
 
 
 @billing_bp.get("/billing/config")

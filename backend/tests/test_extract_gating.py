@@ -202,6 +202,62 @@ def test_statement_extraction_maps_headline_and_csv(client, app, monkeypatch):
     assert "Airtime" in text
 
 
+def test_usage_includes_statement_allowance(client, app):
+    """Business usage payload exposes the bank-statement allowance (300/mo)."""
+    user = make_user(app, plan="business")
+    r = client.get("/api/usage", headers=auth_header(app, user))
+    assert r.status_code == 200
+    st = r.get_json()["usage"]["statements"]
+    assert st["allowed"] is True
+    assert st["limit"] == 300
+    assert st["used"] == 0
+    assert st["atLimit"] is False
+
+
+def test_statement_allowance_caps_statements_only(client, app, monkeypatch):
+    """At the statement allowance, statements are blocked but invoices/receipts
+    stay unlimited on Business."""
+    from plans import PLANS
+    monkeypatch.setitem(PLANS["business"], "statementLimit", 2)
+    import routes.extract_routes as er
+    monkeypatch.setattr(er, "extract_document", lambda pages, doc_type="invoice": FAKE_STATEMENT)
+    user = make_user(app, plan="business")
+
+    # Pre-seed the allowance with 2 completed statements this month.
+    from extensions import db
+    from models import Extraction
+    with app.app_context():
+        for i in range(2):
+            db.session.add(Extraction(
+                user_id=user["id"], doc_type="statement", file_name=f"s{i}",
+                file_type="image/png", file_size=10, data="{}", status="completed",
+            ))
+        db.session.commit()
+
+    # Another statement is now blocked with a statement-specific limit error.
+    r = client.post(
+        "/api/extract",
+        data={"file": _file("statement.png"), "doc_type": "statement"},
+        headers=auth_header(app, user),
+        content_type="multipart/form-data",
+    )
+    assert r.status_code == 402
+    body = r.get_json()
+    assert body["code"] == "LIMIT_REACHED"
+    assert body["capability"] == "statements"
+    assert body["usage"]["statements"]["atLimit"] is True
+
+    # Invoices remain unlimited despite the statement allowance being spent.
+    monkeypatch.setattr(er, "extract_document", lambda pages, doc_type="invoice": FAKE_INVOICE)
+    r2 = client.post(
+        "/api/extract",
+        data={"file": _file("invoice.png"), "doc_type": "invoice"},
+        headers=auth_header(app, user),
+        content_type="multipart/form-data",
+    )
+    assert r2.status_code == 200
+
+
 def test_usage_limit_reached_returns_402(client, app, monkeypatch):
     _stub_extract(monkeypatch)
     user = make_user(app, plan="free")

@@ -21,7 +21,7 @@ from auth import (
 from emails import send_password_reset, send_verification
 from extensions import db, limiter
 from models import Extraction, User
-from plans import build_usage, start_of_month
+from usage import usage_for
 
 auth_bp = Blueprint("auth", __name__, url_prefix="/api/auth")
 
@@ -37,14 +37,6 @@ def _send_verification(user: User) -> None:
     send_verification(user.email, link, user.name)
 
 
-def _count_usage(user: User) -> int:
-    return (
-        Extraction.query.filter(
-            Extraction.user_id == user.id,
-            Extraction.status == "completed",
-            Extraction.created_at >= start_of_month(),
-        ).count()
-    )
 
 
 @auth_bp.post("/register")
@@ -243,8 +235,7 @@ def resend_verification():
 @login_required
 def me():
     user = g.user
-    usage = build_usage(_count_usage(user), user.plan)
-    return jsonify({"user": user.public(), "usage": usage})
+    return jsonify({"user": user.public(), "usage": usage_for(user)})
 
 
 # ─── Account settings ────────────────────────────────────────────────────────

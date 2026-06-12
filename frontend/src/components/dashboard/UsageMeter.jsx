@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { Infinity as InfinityIcon, Zap } from "lucide-react";
+import { Infinity as InfinityIcon, Zap, Landmark } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export function UsageMeter({ usage, compact = false }) {
@@ -11,6 +11,11 @@ export function UsageMeter({ usage, compact = false }) {
 
   const danger = !unlimited && pct >= 100;
   const warn = !unlimited && pct >= 80 && !danger;
+
+  // Bank statements have their own monthly allowance (shown only when the plan
+  // includes statements with a finite limit).
+  const stmt = usage.statements;
+  const showStatements = stmt?.allowed && stmt.limit != null;
 
   return (
     <div
@@ -59,6 +64,35 @@ export function UsageMeter({ usage, compact = false }) {
           )}
         </>
       )}
+
+      {showStatements && <StatementAllowance stmt={stmt} />}
+    </div>
+  );
+}
+
+function StatementAllowance({ stmt }) {
+  const pct = Math.min(100, Math.round((stmt.used / Math.max(1, stmt.limit)) * 100));
+  const danger = stmt.atLimit;
+  const warn = !danger && pct >= 80;
+  return (
+    <div className="mt-4 border-t border-white/[0.07] pt-3.5">
+      <div className="flex items-center justify-between">
+        <span className="flex items-center gap-1.5 text-xs font-medium text-slate-400">
+          <Landmark size={13} className="text-brand-300" /> Bank statements
+        </span>
+        <span className="text-xs tabular-nums text-slate-400">
+          {stmt.used} / {stmt.limit}
+        </span>
+      </div>
+      <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-white/[0.07]">
+        <div
+          className={cn(
+            "h-full rounded-full transition-all duration-500",
+            danger ? "bg-red-400" : warn ? "bg-amber-400" : "bg-brand-gradient",
+          )}
+          style={{ width: `${Math.max(4, pct)}%` }}
+        />
+      </div>
     </div>
   );
 }

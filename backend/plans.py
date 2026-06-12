@@ -76,10 +76,14 @@ PLANS = {
         "api": True,
         "webhooks": True,
         "statements": True,
+        # Bank statements are far costlier to extract than invoices/receipts, so
+        # they get their own monthly allowance even though invoices/receipts are
+        # unlimited. None would mean unlimited statements.
+        "statementLimit": 300,
         "features": [
             "Everything in Pro",
-            "Bank statement extraction",
-            "High-volume processing",
+            "Unlimited invoices & receipts",
+            "300 bank statements / month",
             "Centralized billing & invoicing",
             "Priority support + onboarding",
         ],
@@ -110,7 +114,25 @@ def start_of_month(now: datetime | None = None) -> datetime:
     return datetime(now.year, now.month, 1)
 
 
-def build_usage(used: int, plan_id: str) -> dict:
+def build_statement_usage(statement_used: int, plan_id: str) -> dict:
+    """Bank-statement allowance summary. `allowed` is False for plans without the
+    statements capability; `limit` of None means unlimited statements."""
+    plan = get_plan(plan_id)
+    allowed = bool(plan.get("statements", False))
+    limit = plan.get("statementLimit") if allowed else None
+    unlimited = limit is None
+    remaining = None if (not allowed or unlimited) else max(0, limit - statement_used)
+    at_limit = bool(allowed and not unlimited and statement_used >= limit)
+    return {
+        "allowed": allowed,
+        "used": statement_used,
+        "limit": limit,
+        "remaining": remaining,
+        "atLimit": at_limit,
+    }
+
+
+def build_usage(used: int, plan_id: str, statement_used: int = 0) -> dict:
     """Build the usage summary returned to the frontend."""
     plan = get_plan(plan_id)
     limit = plan["limit"]
@@ -126,4 +148,5 @@ def build_usage(used: int, plan_id: str) -> dict:
         "periodStart": start_of_month().isoformat() + "Z",
         "atLimit": at_limit,
         "capabilities": {cap: bool(plan.get(cap, False)) for cap in CAPABILITIES},
+        "statements": build_statement_usage(statement_used, plan_id),
     }

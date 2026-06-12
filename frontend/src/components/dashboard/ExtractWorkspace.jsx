@@ -56,7 +56,11 @@ export function ExtractWorkspace() {
   const docArticle = docType === "invoice" ? "an" : "a";
   // Bank statements are a Business-only feature. Block upload when selected without it.
   const statementLocked = docType === "statement" && !canStatements;
-  const blocked = atLimit || statementLocked;
+  // Statements have their own monthly allowance (e.g. 300 on Business).
+  const stmt = usage?.statements;
+  const statementSelected = docType === "statement" && canStatements;
+  const statementAtLimit = statementSelected && stmt?.allowed && stmt?.atLimit;
+  const blocked = atLimit || statementLocked || statementAtLimit;
 
   const onDrop = useCallback(
     (accepted, rejected) => {
@@ -177,6 +181,10 @@ export function ExtractWorkspace() {
 
       {statementLocked && status !== "done" && <StatementLockBanner />}
 
+      {statementSelected && stmt?.limit != null && status !== "done" && (
+        statementAtLimit ? <StatementLimitBanner stmt={stmt} /> : <StatementAllowanceNote stmt={stmt} />
+      )}
+
       <AnimatePresence mode="wait">
         {status === "done" ? (
           <motion.div key="result" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-4">
@@ -191,9 +199,11 @@ export function ExtractWorkspace() {
                       ? "Pages combined into one invoice"
                       : "Extraction complete"}
                     {" — "}
-                    {usage?.limit === null
-                      ? `${usage?.used} processed this month`
-                      : `${usage?.remaining} of ${usage?.limit} documents left this month`}
+                    {result?.docType === "statement" && stmt?.allowed && stmt?.limit != null
+                      ? `${stmt.remaining} of ${stmt.limit} bank statements left this month`
+                      : usage?.limit === null
+                        ? `${usage?.used} processed this month`
+                        : `${usage?.remaining} of ${usage?.limit} documents left this month`}
                   </div>
                   <Button size="sm" variant="secondary" onClick={reset}>
                     <RotateCcw size={14} /> Extract another
@@ -620,6 +630,42 @@ function StatementLockBanner() {
       </p>
       <Button size="sm" to="/dashboard/billing">
         Upgrade
+      </Button>
+    </div>
+  );
+}
+
+function StatementAllowanceNote({ stmt }) {
+  const remaining = stmt.remaining ?? Math.max(0, stmt.limit - stmt.used);
+  const low = remaining <= Math.max(5, Math.round(stmt.limit * 0.1));
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-white/[0.07] bg-white/[0.02] px-4 py-2.5 text-sm">
+      <span className="flex items-center gap-2 text-slate-400">
+        <Landmark size={15} className="text-brand-300" />
+        <span className={cn("font-medium", low ? "text-amber-300" : "text-slate-200")}>
+          {stmt.used} of {stmt.limit}
+        </span>{" "}
+        bank statements used this month
+      </span>
+      {low && (
+        <Link to="/dashboard/billing" className="text-xs font-medium text-brand-300 hover:text-brand-200">
+          {remaining} left
+        </Link>
+      )}
+    </div>
+  );
+}
+
+function StatementLimitBanner({ stmt }) {
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-500/30 bg-amber-500/[0.08] px-4 py-3">
+      <div className="flex items-center gap-2.5 text-sm text-amber-200">
+        <AlertCircle size={18} />
+        You've used all {stmt.limit} bank statements included in your plan this month.
+        Invoices and receipts are still unlimited.
+      </div>
+      <Button size="sm" to="/dashboard/billing">
+        View plan
       </Button>
     </div>
   );
