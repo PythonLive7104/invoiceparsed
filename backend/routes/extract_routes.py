@@ -203,36 +203,32 @@ def extract():
         primary["name"] if len(pages) == 1 else f"{primary['name']} (+{len(pages) - 1} pages)"
     )
 
-    try:
-        document = extract_document(pages, doc_type)
-    except Exception as exc:  # noqa: BLE001 — surface a clean message to the client
-        failed = Extraction(
-            user_id=user.id,
-            doc_type=doc_type,
-            file_name=display_name,
-            file_type=primary["mime"],
-            file_size=total_size,
-            data=json.dumps({"error": str(exc)}),
-            status="failed",
-        )
-        db.session.add(failed)
-        db.session.commit()
-        return jsonify({"error": f"Extraction failed: {exc}"}), 502
-
+    # Create a "processing" record up front so the job is tracked in History even
+    # if the user navigates away during a long extraction (e.g. a big statement).
     record = Extraction(
         user_id=user.id,
         doc_type=doc_type,
         file_name=display_name,
         file_type=primary["mime"],
         file_size=total_size,
-        status="completed",
+        data="{}",
+        status="processing",
     )
-    _apply_headline_fields(record, document)
     db.session.add(record)
     db.session.commit()
+    _save_files(record.id, pages)  # store originals now so the viewer works regardless
 
-    # Persist the originals so they can be viewed later.
-    _save_files(record.id, pages)
+    try:
+        document = extract_document(pages, doc_type)
+    except Exception as exc:  # noqa: BLE001 — surface a clean message to the client
+        record.status = "failed"
+        record.data = json.dumps({"error": str(exc)})
+        db.session.commit()
+        return jsonify({"error": f"Extraction failed: {exc}"}), 502
+
+    record.status = "completed"
+    _apply_headline_fields(record, document)
+    db.session.commit()
 
     payload = _serialize(record, document)
 

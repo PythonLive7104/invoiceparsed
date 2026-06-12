@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { Search, FileText, Receipt, Landmark, Download, Sheet, Trash2, Eye, Inbox, AlertCircle } from "lucide-react";
+import { Search, FileText, Receipt, Landmark, Download, Sheet, Trash2, Eye, Inbox, AlertCircle, Loader2 } from "lucide-react";
 
 const DOC_META = {
   receipt: { label: "Receipt", Icon: Receipt },
@@ -81,7 +81,9 @@ export function HistoryTable({ initialItems }) {
             </thead>
             <tbody className="divide-y divide-white/[0.05]">
               {filtered.map((it) => {
-                const failed = it.status !== "completed";
+                const completed = it.status === "completed";
+                const processing = it.status === "processing";
+                const failed = !completed && !processing;
                 return (
                   <tr key={it.id} className="group transition-colors hover:bg-white/[0.02]">
                     <td className="px-5 py-3.5">
@@ -117,16 +119,20 @@ export function HistoryTable({ initialItems }) {
                       <span
                         className={cn(
                           "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium",
-                          failed ? "bg-red-500/15 text-red-300" : "bg-emerald-500/15 text-emerald-300",
+                          processing
+                            ? "bg-amber-500/15 text-amber-300"
+                            : failed
+                              ? "bg-red-500/15 text-red-300"
+                              : "bg-emerald-500/15 text-emerald-300",
                         )}
                       >
-                        {failed ? <AlertCircle size={12} /> : null}
-                        {failed ? "Failed" : "Completed"}
+                        {processing ? <Loader2 size={12} className="animate-spin" /> : failed ? <AlertCircle size={12} /> : null}
+                        {processing ? "Processing" : failed ? "Failed" : "Completed"}
                       </span>
                     </td>
                     <td className="px-4 py-3.5">
                       <div className="flex items-center justify-end gap-1">
-                        {!failed && (
+                        {completed && (
                           <>
                             <Link
                               to={`/dashboard/extractions/${it.id}`}
