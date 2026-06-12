@@ -394,7 +394,7 @@ function SelectedFiles({
 
 const PROCESS_STEPS = [
   { icon: UploadCloud, label: "Uploading document" },
-  { icon: ScanLine, label: "Reading the invoice" },
+  { icon: ScanLine, label: "Reading the document" },
   { icon: Sparkles, label: "Structuring fields" },
 ];
 
@@ -430,7 +430,9 @@ function ProcessingState({ files, combine, uploadPct = 0, docLabel = "invoice" }
           ? `${combine ? `${files.length} pages` : files[0]?.name || "Your file"}`
           : combine
             ? `Merging ${files.length} pages`
-            : "Analyzing the document"}
+            : docLabel === "bank statement"
+              ? "Statements have many rows — this can take up to a minute."
+              : "Analyzing the document"}
       </p>
 
       {/* Determinate upload bar */}
