@@ -7,13 +7,15 @@ const DOC_META = {
   statement: { label: "Statement", Icon: Landmark },
 };
 import { Button } from "@/components/ui/Button";
+import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { cn, formatDate, formatMoney } from "@/lib/utils";
 import { api, downloadFile } from "@/lib/api";
 
 export function HistoryTable({ initialItems }) {
   const [items, setItems] = useState(initialItems);
   const [q, setQ] = useState("");
-  const [deleting, setDeleting] = useState(null);
+  const [toDelete, setToDelete] = useState(null); // item pending confirmation
+  const [deleting, setDeleting] = useState(false);
 
   const filtered = useMemo(() => {
     const term = q.trim().toLowerCase();
@@ -25,16 +27,17 @@ export function HistoryTable({ initialItems }) {
     );
   }, [items, q]);
 
-  async function remove(id) {
-    if (!confirm("Delete this extraction? This cannot be undone.")) return;
-    setDeleting(id);
+  async function confirmDelete() {
+    if (!toDelete) return;
+    setDeleting(true);
     try {
-      await api.delete(`/api/extractions/${id}`);
-      setItems((prev) => prev.filter((it) => it.id !== id));
+      await api.delete(`/api/extractions/${toDelete.id}`);
+      setItems((prev) => prev.filter((it) => it.id !== toDelete.id));
+      setToDelete(null);
     } catch {
       /* ignore */
     }
-    setDeleting(null);
+    setDeleting(false);
   }
 
   if (items.length === 0) {
@@ -168,8 +171,7 @@ export function HistoryTable({ initialItems }) {
                           </>
                         )}
                         <button
-                          onClick={() => remove(it.id)}
-                          disabled={deleting === it.id}
+                          onClick={() => setToDelete(it)}
                           className="grid h-8 w-8 place-items-center rounded-lg text-slate-400 transition-colors hover:bg-red-500/15 hover:text-red-300 disabled:opacity-50"
                           title="Delete"
                         >
@@ -191,6 +193,20 @@ export function HistoryTable({ initialItems }) {
           </table>
         </div>
       </div>
+
+      <ConfirmDialog
+        open={!!toDelete}
+        title="Delete this extraction?"
+        description={
+          toDelete
+            ? `“${toDelete.vendorName || toDelete.fileName || "This document"}” and its uploaded files will be permanently removed. This can't be undone.`
+            : ""
+        }
+        confirmLabel="Delete"
+        loading={deleting}
+        onConfirm={confirmDelete}
+        onClose={() => !deleting && setToDelete(null)}
+      />
     </div>
   );
 }

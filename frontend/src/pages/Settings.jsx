@@ -11,6 +11,7 @@ import {
   AlertCircle,
 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
+import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { useAuth, apiError } from "@/lib/auth.jsx";
 import { formatDate } from "@/lib/utils";
 
@@ -241,6 +242,7 @@ function DangerZone() {
   const { user, deleteAccount } = useAuth();
   const navigate = useNavigate();
   const [confirm, setConfirm] = useState("");
+  const [showConfirm, setShowConfirm] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const canDelete = confirm.trim().toLowerCase() === (user?.email || "").toLowerCase();
@@ -255,6 +257,7 @@ function DangerZone() {
     } catch (err) {
       setError(apiError(err, "Couldn't delete your account."));
       setLoading(false);
+      setShowConfirm(false);
     }
   }
 
@@ -287,7 +290,7 @@ function DangerZone() {
         </label>
         <Notice kind="err">{error}</Notice>
         <button
-          onClick={onDelete}
+          onClick={() => setShowConfirm(true)}
           disabled={!canDelete || loading}
           className="inline-flex items-center gap-2 rounded-xl bg-red-500/90 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-red-500 disabled:cursor-not-allowed disabled:opacity-40"
         >
@@ -295,6 +298,16 @@ function DangerZone() {
           Delete my account
         </button>
       </div>
+
+      <ConfirmDialog
+        open={showConfirm}
+        title="Delete your account?"
+        description="This permanently deletes your account and all data — extractions, uploaded files, API keys and webhooks. This cannot be undone."
+        confirmLabel="Delete account"
+        loading={loading}
+        onConfirm={onDelete}
+        onClose={() => !loading && setShowConfirm(false)}
+      />
     </section>
   );
 }
