@@ -3,6 +3,7 @@ import json
 import mimetypes
 import os
 import shutil
+from datetime import datetime
 
 from flask import Blueprint, Response, current_app, g, jsonify, request, send_file
 from werkzeug.utils import secure_filename
@@ -251,7 +252,7 @@ def extract():
 @api_or_login_required
 def list_extractions():
     rows = (
-        Extraction.query.filter_by(user_id=g.user.id)
+        Extraction.query.filter_by(user_id=g.user.id, deleted_at=None)
         .order_by(Extraction.created_at.desc())
         .limit(300)
         .all()
@@ -262,7 +263,7 @@ def list_extractions():
 @extract_bp.get("/extractions/<eid>")
 @api_or_login_required
 def get_extraction(eid):
-    row = Extraction.query.filter_by(id=eid, user_id=g.user.id).first()
+    row = Extraction.query.filter_by(id=eid, user_id=g.user.id, deleted_at=None).first()
     if row is None:
         return jsonify({"error": "Extraction not found."}), 404
     try:
@@ -276,7 +277,7 @@ def get_extraction(eid):
 @api_or_login_required
 def update_extraction(eid):
     """Persist user (or API) edits to an extraction's fields."""
-    row = Extraction.query.filter_by(id=eid, user_id=g.user.id).first()
+    row = Extraction.query.filter_by(id=eid, user_id=g.user.id, deleted_at=None).first()
     if row is None or row.status != "completed":
         return jsonify({"error": "Extraction not found."}), 404
 
@@ -294,10 +295,12 @@ def update_extraction(eid):
 @extract_bp.delete("/extractions/<eid>")
 @api_or_login_required
 def delete_extraction(eid):
-    row = Extraction.query.filter_by(id=eid, user_id=g.user.id).first()
+    row = Extraction.query.filter_by(id=eid, user_id=g.user.id, deleted_at=None).first()
     if row is None:
         return jsonify({"error": "Extraction not found."}), 404
-    db.session.delete(row)
+    # Soft delete: keep the (now file-less) row so it still counts toward monthly
+    # usage — deleting history must not reset a plan or statement quota.
+    row.deleted_at = datetime.utcnow()
     db.session.commit()
     shutil.rmtree(_extraction_dir(eid), ignore_errors=True)
     return jsonify({"success": True})
@@ -307,7 +310,7 @@ def delete_extraction(eid):
 @extract_bp.get("/extractions/<eid>/files")
 @api_or_login_required
 def list_extraction_files(eid):
-    row = Extraction.query.filter_by(id=eid, user_id=g.user.id).first()
+    row = Extraction.query.filter_by(id=eid, user_id=g.user.id, deleted_at=None).first()
     if row is None:
         return jsonify({"error": "Extraction not found."}), 404
     return jsonify({"files": _list_files(eid)})
@@ -316,7 +319,7 @@ def list_extraction_files(eid):
 @extract_bp.get("/extractions/<eid>/file/<int:index>")
 @api_or_login_required
 def get_extraction_file(eid, index):
-    row = Extraction.query.filter_by(id=eid, user_id=g.user.id).first()
+    row = Extraction.query.filter_by(id=eid, user_id=g.user.id, deleted_at=None).first()
     if row is None:
         return jsonify({"error": "Extraction not found."}), 404
     d = _extraction_dir(eid)
@@ -331,7 +334,7 @@ def get_extraction_file(eid, index):
 @extract_bp.get("/extractions/<eid>/csv")
 @api_or_login_required
 def download_csv(eid):
-    row = Extraction.query.filter_by(id=eid, user_id=g.user.id).first()
+    row = Extraction.query.filter_by(id=eid, user_id=g.user.id, deleted_at=None).first()
     if row is None or row.status != "completed":
         return jsonify({"error": "Extraction not found."}), 404
 
@@ -347,7 +350,7 @@ def download_csv(eid):
 @extract_bp.get("/extractions/<eid>/xlsx")
 @api_or_login_required
 def download_xlsx(eid):
-    row = Extraction.query.filter_by(id=eid, user_id=g.user.id).first()
+    row = Extraction.query.filter_by(id=eid, user_id=g.user.id, deleted_at=None).first()
     if row is None or row.status != "completed":
         return jsonify({"error": "Extraction not found."}), 404
 

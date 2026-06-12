@@ -78,6 +78,10 @@ class Extraction(db.Model):
 
     status = db.Column(db.String(20), nullable=False, default="completed")  # completed|failed
     created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+    # Soft delete: a deleted extraction is hidden from History and its uploaded
+    # files are removed, but the row is kept so it still counts toward monthly
+    # usage (deleting history must not reset a plan/statement quota).
+    deleted_at = db.Column(db.DateTime, nullable=True, index=True)
 
     def list_item(self) -> dict:
         return {

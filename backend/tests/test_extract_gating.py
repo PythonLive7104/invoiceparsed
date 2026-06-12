@@ -258,6 +258,33 @@ def test_statement_allowance_caps_statements_only(client, app, monkeypatch):
     assert r2.status_code == 200
 
 
+def test_deleting_history_does_not_reset_usage(client, app, monkeypatch):
+    """Deleting an extraction hides it from History but it still counts toward
+    monthly usage (quota can't be reset by clearing history)."""
+    _stub_extract(monkeypatch)
+    user = make_user(app, plan="free")
+    created = client.post(
+        "/api/extract",
+        data={"file": _file()},
+        headers=auth_header(app, user),
+        content_type="multipart/form-data",
+    ).get_json()
+
+    assert client.get("/api/usage", headers=auth_header(app, user)).get_json()["usage"]["used"] == 1
+
+    # Delete it.
+    r = client.delete(f"/api/extractions/{created['id']}", headers=auth_header(app, user))
+    assert r.status_code == 200
+
+    # Gone from History, but usage is preserved.
+    listing = client.get("/api/extractions", headers=auth_header(app, user)).get_json()
+    assert listing["extractions"] == []
+    assert client.get("/api/usage", headers=auth_header(app, user)).get_json()["usage"]["used"] == 1
+
+    # And the deleted row is no longer fetchable.
+    assert client.get(f"/api/extractions/{created['id']}", headers=auth_header(app, user)).status_code == 404
+
+
 def test_usage_limit_reached_returns_402(client, app, monkeypatch):
     _stub_extract(monkeypatch)
     user = make_user(app, plan="free")
