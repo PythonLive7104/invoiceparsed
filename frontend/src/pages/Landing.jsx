@@ -238,11 +238,11 @@ export default function Landing() {
                     <span className="h-2.5 w-2.5 rounded-full bg-emerald-400/70" />
                     <span className="ml-2 text-[11px] text-slate-500">Terminal</span>
                   </div>
-                  <pre className="overflow-x-auto whitespace-pre-wrap break-words p-5 font-mono text-[12px] leading-relaxed text-slate-300 sm:text-[12.5px]">
+                  <pre className="overflow-x-auto whitespace-pre p-5 font-mono text-[12px] leading-relaxed text-slate-300 sm:text-[12.5px]">
                     <span className="text-slate-500"># Extract an invoice</span>
                     {"\n"}
-                    <span className="text-accent-violet">curl</span> -X POST
-                    https://api.invoiceparsed.com/extract{" \\"}
+                    <span className="text-accent-violet">curl</span> -X POST{" \\"}
+                    {"\n  "}https://api.invoiceparsed.com/extract{" \\"}
                     {"\n  "}-H{" "}
                     <span className="text-emerald-300">"Authorization: Bearer $KEY"</span>
                     {" \\"}

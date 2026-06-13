@@ -73,7 +73,20 @@ X-API-Key: ip_live_...`}</pre>
         </div>
 
         <H2 id="endpoints">Endpoints</H2>
-        <div className="mt-3 overflow-hidden rounded-xl border border-white/10">
+        {/* Mobile: stacked cards so the description never gets clipped */}
+        <div className="mt-3 space-y-2 sm:hidden">
+          {ENDPOINTS.map(([m, p, d]) => (
+            <div key={p} className="rounded-xl border border-white/10 bg-white/[0.02] p-4">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="rounded bg-brand-500/10 px-1.5 py-0.5 font-mono text-[11px] font-medium text-brand-300">{m}</span>
+                <code className="break-all font-mono text-xs text-slate-200">{p}</code>
+              </div>
+              <p className="mt-2 text-sm text-slate-400">{d}</p>
+            </div>
+          ))}
+        </div>
+        {/* Desktop: table */}
+        <div className="mt-3 hidden overflow-hidden rounded-xl border border-white/10 sm:block">
           <table className="w-full text-left text-sm">
             <thead className="bg-white/[0.03] text-xs uppercase tracking-wider text-slate-500">
               <tr>
