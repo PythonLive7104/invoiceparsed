@@ -230,7 +230,7 @@ export default function Landing() {
                 </div>
               </Reveal>
 
-              <Reveal delay={0.1}>
+              <Reveal delay={0.1} className="min-w-0">
                 <div className="overflow-hidden rounded-2xl border border-white/10 bg-ink-950/80">
                   <div className="flex items-center gap-1.5 border-b border-white/[0.06] px-4 py-2.5">
                     <span className="h-2.5 w-2.5 rounded-full bg-red-400/70" />
