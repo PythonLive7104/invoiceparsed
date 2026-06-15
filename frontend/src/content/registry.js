@@ -388,6 +388,10 @@ export const SITE_FAQS = [
   { q: "Which file formats are supported?", a: "PDF, JPG and PNG files up to 10MB each. Multi-page PDFs and multi-file documents are supported on paid plans." },
   { q: "Is there a free plan?", a: "Yes — the free plan includes 5 documents per month with no credit card required." },
   { q: "What export formats are supported?", a: "Every extraction exports as an Excel (.xlsx) workbook, a QuickBooks-compatible CSV (bill/invoice columns like Bill No, Bill Date, Terms, line items, tax and total that map cleanly in QuickBooks' CSV import), or structured JSON — and you can also pull data via the REST API." },
+  { q: "Does InvoiceParsed work with bank statements from any bank?", a: "Yes. InvoiceParsed reads bank statements using AI rather than per-bank templates, so it handles different layouts from any bank. Bank statement extraction is available on the Business plan, which includes 200 statements per month." },
+  { q: "What happens to my documents after processing?", a: "Your documents are processed solely to extract the data you request. They are never used to train AI models and are never sold or shared with third parties." },
+  { q: "Does InvoiceParsed have an API?", a: "Yes. A REST API and webhooks are included on the Pro and Business plans — POST a PDF or image to /api/extract and get structured JSON back, ideal for automating invoice processing in your own apps." },
+  { q: "Does it support multiple currencies?", a: "Yes. InvoiceParsed detects and preserves the currency on each document, so invoices and receipts in USD, EUR, GBP and other currencies are extracted accurately with the correct currency code." },
 ];
 
 /** Build the full list of sitemap entries from the registry. */

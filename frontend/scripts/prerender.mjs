@@ -21,6 +21,7 @@ import { fileURLToPath } from "node:url";
 import { SITE, absoluteUrl, clamp } from "../src/content/site.js";
 import { PAGE_META } from "../src/content/pages.js";
 import { HERO, ANSWER, STATS, FEATURES, STEPS, AUDIENCES } from "../src/content/home.js";
+import { PLANS, PLAN_ORDER } from "../src/lib/plans.js";
 import {
   BLOG_POSTS,
   COMPARISONS,
@@ -71,6 +72,20 @@ function faqHtml(faqs) {
   );
 }
 
+/** Crawler-visible pricing block — real plan names, prices and what each adds. */
+function pricingHtml() {
+  return (
+    `<section><h2>Pricing</h2><ul>` +
+    PLAN_ORDER.map((id) => {
+      const p = PLANS[id];
+      const price = p.price === 0 ? "Free" : `$${p.price}/mo`;
+      return `<li><strong>${esc(p.name)} — ${esc(price)}</strong>. ${esc(p.tagline)} ` +
+        `Includes: ${esc(p.features.join("; "))}.</li>`;
+    }).join("") +
+    `</ul></section>`
+  );
+}
+
 /** Full crawler-visible homepage body (hero, answer, features, steps, FAQ). */
 function homeBodyHtml() {
   const title = HERO.title.lead + HERO.title.highlight + HERO.title.tail;
@@ -95,7 +110,7 @@ function homeBodyHtml() {
     `<p>${esc(HERO.subhead)}</p>` +
     `<p><a href="${HERO.primaryCta.to}">${esc(HERO.primaryCta.label)}</a></p></header>` +
     `<p>${esc(ANSWER)}</p>` +
-    stats + features + steps + audiences + faqHtml(SITE_FAQS)
+    stats + features + steps + audiences + pricingHtml() + faqHtml(SITE_FAQS)
   );
 }
 
@@ -123,11 +138,12 @@ function indexLinksHtml(path) {
   );
 }
 
-/** Baseline crawler-visible body for a static page: H1 + intro (+ links/FAQ). */
+/** Baseline crawler-visible body for a static page: H1 + intro (+ pricing/links/FAQ). */
 function staticBodyHtml(path, page, faqs) {
   const heading = page.title.replace(new RegExp(` — ${SITE.name}$`), "").split(" — ")[0];
   return (
     `<h1>${esc(heading)}</h1><p>${esc(page.description)}</p>` +
+    (path === "/pricing" ? pricingHtml() : "") +
     indexLinksHtml(path) +
     faqHtml(faqs)
   );
