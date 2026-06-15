@@ -20,6 +20,7 @@ import { fileURLToPath } from "node:url";
 
 import { SITE, absoluteUrl, clamp } from "../src/content/site.js";
 import { PAGE_META } from "../src/content/pages.js";
+import { HERO, ANSWER, STATS, FEATURES, STEPS, AUDIENCES } from "../src/content/home.js";
 import {
   BLOG_POSTS,
   COMPARISONS,
@@ -54,6 +55,78 @@ function blocksToHtml(blocks = []) {
     .join("\n");
 }
 
+/** A crawler-visible FAQ block (also helps AEO / featured snippets). */
+function faqHtml(faqs) {
+  if (!faqs?.length) return "";
+  return (
+    `<section><h2>Frequently asked questions</h2>` +
+    faqs.map((f) => `<h3>${esc(f.q)}</h3><p>${esc(f.a)}</p>`).join("") +
+    `</section>`
+  );
+}
+
+/** Full crawler-visible homepage body (hero, answer, features, steps, FAQ). */
+function homeBodyHtml() {
+  const title = HERO.title.lead + HERO.title.highlight + HERO.title.tail;
+  const stats = `<ul>${STATS.map(([v, l]) => `<li><strong>${esc(v)}</strong> — ${esc(l)}</li>`).join("")}</ul>`;
+  const features =
+    `<section><h2>Built to kill manual data entry</h2>` +
+    FEATURES.map((f) => `<div><h3>${esc(f.title)}</h3><p>${esc(f.desc)}</p></div>`).join("") +
+    `</section>`;
+  const steps =
+    `<section><h2>From file to data in three steps</h2>` +
+    STEPS.map((s, i) => `<div><h3>Step ${i + 1}: ${esc(s.title)}</h3><p>${esc(s.desc)}</p></div>`).join("") +
+    `</section>`;
+  const audiences =
+    `<section><h2>From solo freelancers to finance teams</h2>` +
+    AUDIENCES.map((a) =>
+      `<div><h3>${esc(a.title)}</h3><p>${esc(a.desc)}</p>` +
+      `<ul>${a.points.map((p) => `<li>${esc(p)}</li>`).join("")}</ul></div>`,
+    ).join("") +
+    `</section>`;
+  return (
+    `<header><p>${esc(HERO.eyebrow)}</p><h1>${esc(title)}</h1>` +
+    `<p>${esc(HERO.subhead)}</p>` +
+    `<p><a href="${HERO.primaryCta.to}">${esc(HERO.primaryCta.label)}</a></p></header>` +
+    `<p>${esc(ANSWER)}</p>` +
+    stats + features + steps + audiences + faqHtml(SITE_FAQS)
+  );
+}
+
+// Index pages list their child articles, giving crawlers real internal links.
+const INDEX_ITEMS = {
+  "/blog": { items: BLOG_POSTS, base: "/blog" },
+  "/compare": { items: COMPARISONS, base: "/compare" },
+  "/use-cases": { items: USE_CASES, base: "/use-cases" },
+};
+
+function indexLinksHtml(path) {
+  const cfg = INDEX_ITEMS[path];
+  if (!cfg) return "";
+  return (
+    `<ul>` +
+    cfg.items
+      .map(
+        (p) =>
+          `<li><a href="${cfg.base}/${p.slug}">${esc(p.title)}</a>` +
+          (p.description ? ` — ${esc(p.description)}` : "") +
+          `</li>`,
+      )
+      .join("") +
+    `</ul>`
+  );
+}
+
+/** Baseline crawler-visible body for a static page: H1 + intro (+ links/FAQ). */
+function staticBodyHtml(path, page, faqs) {
+  const heading = page.title.replace(new RegExp(` — ${SITE.name}$`), "").split(" — ")[0];
+  return (
+    `<h1>${esc(heading)}</h1><p>${esc(page.description)}</p>` +
+    indexLinksHtml(path) +
+    faqHtml(faqs)
+  );
+}
+
 /** Full crawler-visible article HTML (title, intro, body, FAQ) injected into #root. */
 function articleHtml(post) {
   const faq = post.faqs?.length
@@ -83,23 +156,26 @@ function pages() {
   // Static pages.
   for (const [path, meta] of Object.entries(PAGE_META)) {
     const schemas = [];
+    const faqs = meta.schema?.includes("faq")
+      ? (path === "/pricing" ? PRICING_FAQS : SITE_FAQS)
+      : null;
     if (meta.schema?.includes("software")) schemas.push(softwareApplicationSchema());
-    if (meta.schema?.includes("faq")) {
-      const faqs = path === "/pricing" ? PRICING_FAQS : SITE_FAQS;
-      schemas.push(faqPageSchema(faqs));
-    }
+    if (faqs) schemas.push(faqPageSchema(faqs));
     if (path !== "/") {
       const name = meta.title.replace(/ — InvoiceParsed$/, "").split(" — ")[0];
       schemas.push(breadcrumbSchema([{ name: "Home", path: "/" }, { name, path }]));
     }
-    out.push({
+    const page = {
       path,
       title: meta.titleRaw ? meta.title : `${meta.title} — ${SITE.name}`,
       description: meta.description,
       image: SITE.ogImage,
       type: "website",
       schemas,
-    });
+    };
+    // Crawler-visible body so non-JS bots see real content, not an empty #root.
+    page.bodyHtml = path === "/" ? homeBodyHtml() : staticBodyHtml(path, page, faqs);
+    out.push(page);
   }
 
   // Article-style pages (blog / compare / use-cases).

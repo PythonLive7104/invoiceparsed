@@ -1,6 +1,7 @@
 import { motion } from "framer-motion";
 import { Sparkles, FileText, ArrowRight, Zap } from "lucide-react";
 import { Button } from "@/components/ui/Button";
+import { HERO } from "@/content/home";
 
 const jsonLines = [
   { t: "{", key: false },
@@ -31,7 +32,7 @@ export function Hero() {
             className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-3.5 py-1.5 text-xs font-medium text-slate-300"
           >
             <Sparkles size={14} className="text-accent-cyan" />
-            AI extraction for invoices, receipts &amp; statements
+            {HERO.eyebrow}
           </motion.div>
 
           <motion.h1
@@ -40,7 +41,9 @@ export function Hero() {
             transition={{ duration: 0.7, delay: 0.05, ease: [0.22, 1, 0.36, 1] }}
             className="mt-6 text-balance text-5xl font-semibold leading-[1.05] tracking-tight text-white sm:text-6xl lg:text-7xl"
           >
-            Turn any invoice into <span className="gradient-text">clean data</span> in seconds.
+            {HERO.title.lead}
+            <span className="gradient-text">{HERO.title.highlight}</span>
+            {HERO.title.tail}
           </motion.h1>
 
           <motion.p
@@ -49,9 +52,7 @@ export function Hero() {
             transition={{ duration: 0.7, delay: 0.12, ease: [0.22, 1, 0.36, 1] }}
             className="mt-6 max-w-xl text-lg leading-relaxed text-slate-400"
           >
-            Stop typing invoices into spreadsheets. Upload a PDF or photo and get vendor, line
-            items, taxes and totals as structured JSON or CSV — instantly, accurately,
-            automatically.
+            {HERO.subhead}
           </motion.p>
 
           <motion.div
@@ -60,12 +61,12 @@ export function Hero() {
             transition={{ duration: 0.7, delay: 0.18, ease: [0.22, 1, 0.36, 1] }}
             className="mt-9 flex flex-col gap-3 sm:flex-row sm:items-center"
           >
-            <Button to="/signup" size="lg">
-              Extract your first invoice
+            <Button to={HERO.primaryCta.to} size="lg">
+              {HERO.primaryCta.label}
               <ArrowRight size={18} />
             </Button>
-            <Button href="#how" variant="outline" size="lg">
-              See how it works
+            <Button href={HERO.secondaryCta.href} variant="outline" size="lg">
+              {HERO.secondaryCta.label}
             </Button>
           </motion.div>
 

@@ -26,42 +26,17 @@ import { FaqSection } from "@/components/seo/FaqSection";
 import { softwareApplicationSchema } from "@/lib/schema";
 import { SITE_FAQS } from "@/content/registry";
 import { PAGE_META } from "@/content/pages";
+import { ANSWER, AUDIENCES, FEATURES, STATS, STEPS } from "@/content/home";
 import { PLANS, plansForSegment } from "@/lib/plans";
 import { cn } from "@/lib/utils";
 
-const audiences = [
-  {
-    id: "personal",
-    icon: User,
-    eyebrow: "For individuals",
-    title: "Freelancers & sole traders",
-    desc: "Stop logging client invoices into a spreadsheet by hand. Drag in a PDF, get clean data and a CSV in seconds — and reclaim hours every week.",
-    points: ["Simple drag & drop", "CSV export for your books", "Accurate line-item capture", "Starts free"],
-  },
-  {
-    id: "business",
-    icon: Building2,
-    eyebrow: "For businesses",
-    title: "Teams, agencies & finance ops",
-    desc: "Process invoices at volume and feed them straight into your accounting stack. Batch upload, REST API, webhooks and centralized billing.",
-    points: ["Batch & multi-page", "REST API + webhooks", "High-volume processing", "Centralized billing"],
-  },
-];
-
-const features = [
-  { icon: ScanLine, title: "Field-perfect extraction", desc: "Vendor, invoice number, dates, line items, subtotal, tax and total — every field, captured accurately." },
-  { icon: Layers, title: "PDF & image, any layout", desc: "Upload PDFs or photos. Handles messy scans, multi-page invoices and unusual layouts." },
-  { icon: FileJson, title: "Excel, CSV & JSON export", desc: "One click to an Excel (.xlsx) workbook, a QuickBooks-compatible CSV, or a strict JSON payload — straight into your accounting software." },
-  { icon: Gauge, title: "95%+ accuracy", desc: "Tuned prompts and structured outputs keep extraction reliable on standard invoice formats." },
-  { icon: Clock, title: "Seconds, not hours", desc: "What took a bookkeeper 6 hours a week now happens the moment you drop a file." },
-  { icon: ShieldCheck, title: "Private by design", desc: "Your documents are processed for extraction only — no training, no resale of your data." },
-];
-
-const steps = [
-  { icon: Upload, title: "Upload", desc: "Drag & drop a PDF or image, or pick a file. Up to 10MB per invoice." },
-  { icon: ScanLine, title: "Extract", desc: "Our AI reads the document and structures every field in seconds." },
-  { icon: FileJson, title: "Export", desc: "Review, edit, then download JSON or CSV — or pull it via the API." },
-];
+// Homepage copy is the single source of truth in src/content/home.js (shared
+// with the build-time prerenderer). It references icons by name; map them to
+// lucide components here.
+const ICONS = { Upload, ScanLine, FileJson, Gauge, Clock, ShieldCheck, Layers, User, Building2 };
+const audiences = AUDIENCES;
+const features = FEATURES;
+const steps = STEPS;
 
 export default function Landing() {
   const [segment, setSegment] = useState("personal");
@@ -77,21 +52,12 @@ export default function Landing() {
 
       {/* Answer-first paragraph for AEO — visually subtle, crawler-visible. */}
       <p className="container-page -mt-2 max-w-3xl pb-2 text-base leading-relaxed text-slate-400">
-        InvoiceParsed is an AI-powered tool that extracts data from invoices,
-        receipts and bank statements — turning a PDF or image into structured
-        data (vendor, line items, tax and totals) in seconds. Upload a file and
-        export to Excel, a QuickBooks-compatible CSV, or JSON, with a confidence
-        score on every field. No templates, no manual data entry.
+        {ANSWER}
       </p>
 
       <section className="border-y border-white/[0.06] bg-white/[0.015] py-8">
         <div className="container-page grid grid-cols-2 gap-6 text-center sm:grid-cols-4">
-          {[
-            ["5 sec", "Avg. processing"],
-            ["95%+", "Field accuracy"],
-            ["10+", "Fields per invoice"],
-            ["JSON/CSV", "Export formats"],
-          ].map(([stat, label]) => (
+          {STATS.map(([stat, label]) => (
             <div key={label}>
               <div className="text-2xl font-semibold text-white sm:text-3xl">{stat}</div>
               <div className="mt-1 text-xs text-slate-500 sm:text-sm">{label}</div>
@@ -114,17 +80,20 @@ export default function Landing() {
           </Reveal>
 
           <div className="mt-16 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-            {features.map((f, i) => (
+            {features.map((f, i) => {
+              const Icon = ICONS[f.icon];
+              return (
               <Reveal key={f.title} delay={i * 0.05}>
                 <div className="group glass h-full rounded-2xl p-6 transition-all duration-300 hover:-translate-y-1 hover:border-brand-400/30">
                   <div className="grid h-11 w-11 place-items-center rounded-xl bg-brand-500/10 text-brand-300 ring-1 ring-inset ring-brand-400/20 transition-colors group-hover:bg-brand-500/20">
-                    <f.icon size={20} />
+                    <Icon size={20} />
                   </div>
                   <h3 className="mt-5 text-lg font-semibold text-white">{f.title}</h3>
                   <p className="mt-2 text-sm leading-relaxed text-slate-400">{f.desc}</p>
                 </div>
               </Reveal>
-            ))}
+              );
+            })}
           </div>
         </div>
       </section>
@@ -140,12 +109,14 @@ export default function Landing() {
           </Reveal>
 
           <div className="mt-14 grid gap-6 lg:grid-cols-2">
-            {audiences.map((a, i) => (
+            {audiences.map((a, i) => {
+              const Icon = ICONS[a.icon];
+              return (
               <Reveal key={a.id} delay={i * 0.08}>
                 <div className="glass h-full rounded-2xl p-8">
                   <div className="flex items-center gap-3">
                     <span className="grid h-11 w-11 place-items-center rounded-xl bg-brand-gradient text-white shadow-glow-sm">
-                      <a.icon size={20} />
+                      <Icon size={20} />
                     </span>
                     <span className="text-sm font-semibold text-brand-300">{a.eyebrow}</span>
                   </div>
@@ -171,7 +142,8 @@ export default function Landing() {
                   </div>
                 </div>
               </Reveal>
-            ))}
+              );
+            })}
           </div>
         </div>
       </section>
@@ -187,11 +159,13 @@ export default function Landing() {
 
           <div className="relative mt-16 grid gap-6 md:grid-cols-3">
             <div className="pointer-events-none absolute left-0 right-0 top-12 hidden h-px bg-gradient-to-r from-transparent via-brand-500/40 to-transparent md:block" />
-            {steps.map((s, i) => (
+            {steps.map((s, i) => {
+              const Icon = ICONS[s.icon];
+              return (
               <Reveal key={s.title} delay={i * 0.1}>
                 <div className="glass relative h-full rounded-2xl p-7 text-center">
                   <div className="mx-auto grid h-14 w-14 place-items-center rounded-2xl bg-brand-gradient text-white shadow-glow-sm">
-                    <s.icon size={24} />
+                    <Icon size={24} />
                   </div>
                   <div className="mt-5 text-xs font-semibold uppercase tracking-wider text-brand-400">
                     Step {i + 1}
@@ -200,7 +174,8 @@ export default function Landing() {
                   <p className="mt-2 text-sm leading-relaxed text-slate-400">{s.desc}</p>
                 </div>
               </Reveal>
-            ))}
+              );
+            })}
           </div>
         </div>
       </section>
