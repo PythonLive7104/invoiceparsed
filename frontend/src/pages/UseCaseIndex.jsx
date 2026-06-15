@@ -2,8 +2,6 @@ import { Link } from "react-router-dom";
 import { MarketingNav } from "@/components/marketing/MarketingNav";
 import { Footer } from "@/components/marketing/Footer";
 import { SEO } from "@/components/seo/SEO";
-import { JsonLd } from "@/components/seo/JsonLd";
-import { breadcrumbSchema } from "@/lib/schema";
 import { USE_CASES } from "@/content/registry";
 import { PAGE_META } from "@/content/pages";
 
@@ -12,7 +10,6 @@ export default function UseCaseIndex() {
   return (
     <div className="min-h-screen bg-ink-950">
       <SEO title={meta.title} titleRaw={meta.titleRaw} description={meta.description} path="/use-cases" />
-      <JsonLd data={breadcrumbSchema([{ name: "Home", path: "/" }, { name: "Use cases", path: "/use-cases" }])} />
       <MarketingNav />
       <main className="mx-auto w-full max-w-3xl px-5 pb-20 pt-28">
         <h1 className="text-3xl font-semibold tracking-tight text-white sm:text-4xl">Use cases</h1>

@@ -3,8 +3,6 @@ import { MarketingNav } from "@/components/marketing/MarketingNav";
 import { Footer } from "@/components/marketing/Footer";
 import { Button } from "@/components/ui/Button";
 import { SEO } from "@/components/seo/SEO";
-import { JsonLd } from "@/components/seo/JsonLd";
-import { breadcrumbSchema } from "@/lib/schema";
 import { PAGE_META } from "@/content/pages";
 
 export default function About() {
@@ -12,7 +10,6 @@ export default function About() {
   return (
     <div className="min-h-screen bg-ink-950">
       <SEO title={meta.title} description={meta.description} path="/about" />
-      <JsonLd data={breadcrumbSchema([{ name: "Home", path: "/" }, { name: "About", path: "/about" }])} />
       <MarketingNav />
 
       <main className="mx-auto w-full max-w-3xl px-5 pb-20 pt-28">

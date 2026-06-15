@@ -3,10 +3,8 @@ import { ChevronRight } from "lucide-react";
 import { MarketingNav } from "@/components/marketing/MarketingNav";
 import { Footer } from "@/components/marketing/Footer";
 import { SEO } from "@/components/seo/SEO";
-import { JsonLd } from "@/components/seo/JsonLd";
 import { FaqSection } from "@/components/seo/FaqSection";
 import { ArticleBody } from "@/components/blog/ArticleBody";
-import { articleSchema, breadcrumbSchema, faqPageSchema } from "@/lib/schema";
 import { formatDate } from "@/lib/utils";
 
 /**
@@ -36,19 +34,8 @@ export function ArticleLayout({ post, kind = "blog", children }) {
     { name: post.title, path },
   ];
 
-  const schemas = [
-    articleSchema({
-      title: post.title,
-      description: post.description,
-      url: path,
-      image: post.image,
-      author: post.author,
-      datePublished: post.datePublished,
-      dateModified: post.dateModified,
-    }),
-    breadcrumbSchema(crumbs),
-    post.faqs?.length ? faqPageSchema(post.faqs) : null,
-  ];
+  // Article/Breadcrumb/FAQPage JSON-LD is emitted by the prerenderer
+  // (single source of truth — see scripts/prerender.mjs).
 
   return (
     <div className="min-h-screen bg-ink-950">
@@ -65,8 +52,6 @@ export function ArticleLayout({ post, kind = "blog", children }) {
           tags: post.tags,
         }}
       />
-      <JsonLd data={schemas} />
-
       <MarketingNav />
 
       <article className="mx-auto w-full max-w-3xl px-5 pb-20 pt-28">

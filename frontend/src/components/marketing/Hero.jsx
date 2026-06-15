@@ -1,21 +1,7 @@
 import { motion } from "framer-motion";
-import { Sparkles, FileText, ArrowRight, Zap } from "lucide-react";
+import { Sparkles, ArrowRight, Zap } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { HERO } from "@/content/home";
-
-const jsonLines = [
-  { t: "{", key: false },
-  { t: '"vendor": { "name": "Acme Corp", … },', key: true },
-  { t: '"invoice_number": "INV-2024-0042",', key: true },
-  { t: '"invoice_date": "2024-03-15",', key: true },
-  { t: '"due_date": "2024-04-14",', key: true },
-  { t: '"currency": "USD",', key: true },
-  { t: '"line_items": [ … ],', key: true },
-  { t: '"subtotal": 1500.00,', key: true },
-  { t: '"tax": 120.00,', key: true },
-  { t: '"total": 1620.00', key: true },
-  { t: "}", key: false },
-];
 
 export function Hero() {
   return (
@@ -92,59 +78,30 @@ export function Hero() {
           transition={{ duration: 0.8, delay: 0.2, ease: [0.22, 1, 0.36, 1] }}
           className="relative"
         >
-          <div className="relative mx-auto flex max-w-md flex-col items-stretch gap-3 sm:grid sm:max-w-none sm:grid-cols-[1fr_auto_1fr] sm:items-center">
-            <div className="glass animate-float rounded-2xl p-4 [animation-delay:-1s]">
-              <div className="flex items-center gap-2 text-slate-400">
-                <FileText size={16} />
-                <span className="text-xs">invoice.pdf</span>
-              </div>
-              <div className="mt-3 space-y-2">
-                <div className="h-2.5 w-2/3 rounded bg-white/10" />
-                <div className="h-2 w-1/2 rounded bg-white/[0.06]" />
-                <div className="mt-3 space-y-1.5">
-                  {[1, 2, 3, 4].map((i) => (
-                    <div key={i} className="flex justify-between gap-2">
-                      <div className="h-2 w-2/3 rounded bg-white/[0.06]" />
-                      <div className="h-2 w-10 rounded bg-white/[0.06]" />
-                    </div>
-                  ))}
-                </div>
-                <div className="mt-3 flex justify-between border-t border-white/10 pt-2">
-                  <div className="h-2.5 w-12 rounded bg-white/10" />
-                  <div className="h-2.5 w-14 rounded bg-brand-400/50" />
-                </div>
-              </div>
-            </div>
-
-            <div className="relative grid place-items-center">
-              <span className="absolute h-10 w-10 rounded-full bg-brand-500/40 animate-pulse-ring" />
-              <span className="relative grid h-10 w-10 place-items-center rounded-full bg-brand-gradient text-white shadow-glow-sm">
-                <Sparkles size={18} />
+          <div className="glass overflow-hidden rounded-2xl border border-white/10 shadow-glow-sm">
+            <div className="flex items-center gap-1.5 border-b border-white/[0.06] px-4 py-2.5">
+              <span className="h-2.5 w-2.5 rounded-full bg-red-400/70" />
+              <span className="h-2.5 w-2.5 rounded-full bg-amber-400/70" />
+              <span className="h-2.5 w-2.5 rounded-full bg-emerald-400/70" />
+              <span className="ml-2 inline-flex items-center gap-1 text-[11px] text-slate-500">
+                <Sparkles size={11} className="text-accent-cyan" /> InvoiceParsed — live demo
               </span>
             </div>
-
-            <div className="glass overflow-hidden rounded-2xl">
-              <div className="flex items-center gap-1.5 border-b border-white/[0.06] px-4 py-2.5">
-                <span className="h-2.5 w-2.5 rounded-full bg-red-400/70" />
-                <span className="h-2.5 w-2.5 rounded-full bg-amber-400/70" />
-                <span className="h-2.5 w-2.5 rounded-full bg-emerald-400/70" />
-                <span className="ml-2 text-[11px] text-slate-500">output.json</span>
-              </div>
-              <pre className="overflow-x-auto whitespace-pre-wrap break-words p-4 font-mono text-[11px] leading-relaxed sm:text-xs">
-                {jsonLines.map((line, i) => (
-                  <motion.div
-                    key={i}
-                    initial={{ opacity: 0, x: 8 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    transition={{ delay: 0.6 + i * 0.07, duration: 0.4 }}
-                    style={{ paddingLeft: line.key ? 12 : 0 }}
-                    className={line.key ? "text-accent-cyan" : "text-slate-400"}
-                  >
-                    {line.t}
-                  </motion.div>
-                ))}
-              </pre>
-            </div>
+            {/* Muted + autoplay + loop is the only combination browsers allow to
+                play inline without a click; playsInline stops iOS going fullscreen.
+                The asset lives in /public (demo.mp4); poster shows while it loads. */}
+            <video
+              className="block w-full bg-ink-950"
+              autoPlay
+              muted
+              loop
+              playsInline
+              preload="metadata"
+              poster="/demo-poster.jpg"
+              aria-label="InvoiceParsed demo: uploading an invoice and exporting structured data"
+            >
+              <source src="/demo.mp4" type="video/mp4" />
+            </video>
           </div>
         </motion.div>
       </div>

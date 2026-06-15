@@ -3,9 +3,7 @@ import { MarketingNav } from "@/components/marketing/MarketingNav";
 import { Footer } from "@/components/marketing/Footer";
 import { Button } from "@/components/ui/Button";
 import { SEO } from "@/components/seo/SEO";
-import { JsonLd } from "@/components/seo/JsonLd";
 import { FaqSection } from "@/components/seo/FaqSection";
-import { breadcrumbSchema } from "@/lib/schema";
 import { PAGE_META } from "@/content/pages";
 import { PRICING_FAQS } from "@/content/registry";
 import { PLAN_ORDER, PLANS } from "@/lib/plans";
@@ -16,7 +14,6 @@ export default function Pricing() {
   return (
     <div className="min-h-screen bg-ink-950">
       <SEO title={meta.title} titleRaw={meta.titleRaw} description={meta.description} path="/pricing" />
-      <JsonLd data={breadcrumbSchema([{ name: "Home", path: "/" }, { name: "Pricing", path: "/pricing" }])} />
       <MarketingNav />
 
       <main className="mx-auto w-full max-w-6xl px-5 pb-20 pt-28">
@@ -75,7 +72,7 @@ export default function Pricing() {
         </div>
 
         <div className="mt-24">
-          <FaqSection faqs={PRICING_FAQS} />
+          <FaqSection faqs={PRICING_FAQS} emitSchema={false} />
         </div>
       </main>
       <Footer />

@@ -4,8 +4,6 @@ import { MarketingNav } from "@/components/marketing/MarketingNav";
 import { Footer } from "@/components/marketing/Footer";
 import { Button } from "@/components/ui/Button";
 import { SEO } from "@/components/seo/SEO";
-import { JsonLd } from "@/components/seo/JsonLd";
-import { breadcrumbSchema } from "@/lib/schema";
 import { ApiQuickStart } from "@/components/api/ApiQuickStart";
 import { SITE } from "@/content/site";
 import { PAGE_META } from "@/content/pages";
@@ -30,7 +28,6 @@ export default function ApiDocs() {
   return (
     <div className="min-h-screen bg-ink-950">
       <SEO title={meta.title} titleRaw={meta.titleRaw} description={meta.description} path="/docs" />
-      <JsonLd data={breadcrumbSchema([{ name: "Home", path: "/" }, { name: "API docs", path: "/docs" }])} />
       <MarketingNav />
 
       <main className="mx-auto w-full max-w-3xl px-5 pb-24 pt-28">

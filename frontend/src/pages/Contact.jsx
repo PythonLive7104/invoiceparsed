@@ -4,8 +4,6 @@ import { MarketingNav } from "@/components/marketing/MarketingNav";
 import { Footer } from "@/components/marketing/Footer";
 import { Button } from "@/components/ui/Button";
 import { SEO } from "@/components/seo/SEO";
-import { JsonLd } from "@/components/seo/JsonLd";
-import { breadcrumbSchema } from "@/lib/schema";
 import { api, apiError } from "@/lib/api";
 
 export default function Contact() {
@@ -35,7 +33,6 @@ export default function Contact() {
         description="Get in touch with the InvoiceParsed team — questions about invoice, receipt or bank statement extraction, pricing, the API, or your account."
         path="/contact"
       />
-      <JsonLd data={breadcrumbSchema([{ name: "Home", path: "/" }, { name: "Contact", path: "/contact" }])} />
       <MarketingNav />
 
       <main className="mx-auto w-full max-w-xl px-5 pb-20 pt-28">

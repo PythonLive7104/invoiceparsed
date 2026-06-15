@@ -2,8 +2,6 @@ import { Link } from "react-router-dom";
 import { MarketingNav } from "@/components/marketing/MarketingNav";
 import { Footer } from "@/components/marketing/Footer";
 import { SEO } from "@/components/seo/SEO";
-import { JsonLd } from "@/components/seo/JsonLd";
-import { breadcrumbSchema } from "@/lib/schema";
 import { BLOG_POSTS } from "@/content/registry";
 import { PAGE_META } from "@/content/pages";
 import { formatDate } from "@/lib/utils";
@@ -13,7 +11,6 @@ export default function BlogIndex() {
   return (
     <div className="min-h-screen bg-ink-950">
       <SEO title={meta.title} description={meta.description} path="/blog" />
-      <JsonLd data={breadcrumbSchema([{ name: "Home", path: "/" }, { name: "Blog", path: "/blog" }])} />
       <MarketingNav />
       <main className="mx-auto w-full max-w-3xl px-5 pb-20 pt-28">
         <h1 className="text-3xl font-semibold tracking-tight text-white sm:text-4xl">

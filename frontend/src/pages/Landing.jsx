@@ -21,9 +21,7 @@ import { Footer } from "@/components/marketing/Footer";
 import { Reveal } from "@/components/ui/Reveal";
 import { Button } from "@/components/ui/Button";
 import { SEO } from "@/components/seo/SEO";
-import { JsonLd } from "@/components/seo/JsonLd";
 import { FaqSection } from "@/components/seo/FaqSection";
-import { softwareApplicationSchema } from "@/lib/schema";
 import { SITE_FAQS } from "@/content/registry";
 import { PAGE_META } from "@/content/pages";
 import { ANSWER, AUDIENCES, FEATURES, STATS, STEPS } from "@/content/home";
@@ -45,7 +43,6 @@ export default function Landing() {
   return (
     <main className="relative">
       <SEO title={PAGE_META["/"].title} description={PAGE_META["/"].description} path="/" />
-      <JsonLd data={softwareApplicationSchema()} />
 
       <MarketingNav />
       <Hero />
@@ -353,7 +350,8 @@ export default function Landing() {
       </section>
 
       <section className="container-page py-16 sm:py-20">
-        <FaqSection faqs={SITE_FAQS} />
+        {/* FAQPage JSON-LD is emitted by the prerenderer (single source of truth). */}
+        <FaqSection faqs={SITE_FAQS} emitSchema={false} />
       </section>
 
       <Footer />
