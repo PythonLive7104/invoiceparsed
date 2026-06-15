@@ -145,6 +145,40 @@ def test_webhook_payment_deduplicated_on_retry(client, app, monkeypatch):
     assert len(hist.get_json()["payments"]) == 1
 
 
+def test_sync_reconciles_payments_and_plan_from_dodo(client, app, monkeypatch):
+    monkeypatch.setattr(billing.Config, "DODO_API_KEY", "test-key")
+    user = make_user(app, plan="free")
+
+    # Stand in for Dodo: a succeeded payment and an active subscription.
+    def fake_fetch(u):
+        assert u.id == user["id"]
+        return {
+            "payments": [{
+                "payment_id": "pay_synced",
+                "amount": 1900,
+                "currency": "USD",
+                "status": "succeeded",
+                "plan": "starter",
+                "subscription_id": "sub_1",
+                "created_at": None,
+            }],
+            "active_plan": "starter",
+        }
+
+    monkeypatch.setattr(billing, "fetch_customer_billing", fake_fetch)
+
+    r = client.post("/api/billing/sync", headers=auth_header(app, user))
+    assert r.status_code == 200
+    body = r.get_json()
+    assert body["user"]["plan"] == "starter"  # plan activated from live subscription
+    assert len(body["payments"]) == 1
+    assert body["payments"][0]["paymentId"] == "pay_synced"
+
+    # Idempotent: a second sync doesn't duplicate the row.
+    r2 = client.post("/api/billing/sync", headers=auth_header(app, user))
+    assert len(r2.get_json()["payments"]) == 1
+
+
 def test_webhook_cancellation_downgrades(client, app, monkeypatch):
     secret = base64.b64encode(b"super-secret").decode()
     user = make_user(app, plan="pro")

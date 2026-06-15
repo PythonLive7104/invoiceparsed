@@ -46,10 +46,19 @@ export function PaymentHistory() {
     load();
   }, [load]);
 
-  // "Confirm my payment" — re-pull the plan (in case the webhook just landed)
-  // and the payment list together.
+  // "Confirm payment" — reconcile against Dodo directly (catches missed
+  // webhooks), then refresh the plan/usage in the app shell.
   async function refresh() {
-    await Promise.all([refreshUsage(), load()]);
+    setLoading(true);
+    setError(false);
+    try {
+      const { data } = await api.post("/api/billing/sync");
+      setPayments(data.payments || []);
+      await refreshUsage();
+    } catch {
+      setError(true);
+    }
+    setLoading(false);
   }
 
   return (

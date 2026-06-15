@@ -80,17 +80,67 @@ _ACTIVATING = {"subscription.active", "payment.succeeded"}
 _DEACTIVATING = {"subscription.cancelled", "subscription.canceled", "subscription.expired"}
 
 
-@billing_bp.get("/billing/payments")
-@login_required
-def payments():
-    """Return the signed-in user's payment history (most recent first)."""
+def _payment_history(user):
     rows = (
-        Payment.query.filter_by(user_id=g.user.id)
+        Payment.query.filter_by(user_id=user.id)
         .order_by(Payment.created_at.desc())
         .limit(50)
         .all()
     )
-    return jsonify({"payments": [p.public() for p in rows]})
+    return [p.public() for p in rows]
+
+
+@billing_bp.get("/billing/payments")
+@login_required
+def payments():
+    """Return the signed-in user's payment history (most recent first)."""
+    return jsonify({"payments": _payment_history(g.user)})
+
+
+@billing_bp.post("/billing/sync")
+@login_required
+def sync():
+    """Reconcile the user's billing against Dodo on demand ("Confirm payment").
+
+    Pulls their real payments and active subscription from Dodo's API, records any
+    we hadn't seen (e.g. a missed webhook), and activates the plan if an active
+    subscription exists. Lets a paid user self-recover without waiting on a webhook.
+    """
+    if not billing.is_configured():
+        # Demo mode — nothing to reconcile against; just return what we have.
+        return jsonify({"payments": _payment_history(g.user), "user": g.user.public()})
+
+    try:
+        remote = billing.fetch_customer_billing(g.user)
+    except billing.BillingError as exc:
+        logger.warning("Billing sync failed for user_id=%s: %s", g.user.id, exc)
+        return jsonify({"error": str(exc)}), 502
+
+    # Upsert payment rows (dedupe on Dodo's payment id; refresh changed statuses).
+    for p in remote["payments"]:
+        pid = p.get("payment_id")
+        if not pid:
+            continue
+        row = Payment.query.filter_by(provider_payment_id=pid).first()
+        if row is None:
+            row = Payment(user_id=g.user.id, provider_payment_id=pid, event_type="sync")
+            if p.get("created_at"):
+                row.created_at = p["created_at"]
+            db.session.add(row)
+        row.plan = p.get("plan") or row.plan
+        row.amount = p.get("amount")
+        row.currency = p.get("currency")
+        row.status = p.get("status")
+        row.provider_subscription_id = p.get("subscription_id") or row.provider_subscription_id
+
+    # Activate the plan from the live active subscription, if any.
+    activated = remote.get("active_plan")
+    if activated and g.user.plan != activated:
+        g.user.plan = activated
+        logger.info("Billing sync activated plan=%s for user_id=%s", activated, g.user.id)
+
+    db.session.commit()
+    return jsonify({"payments": _payment_history(g.user), "user": g.user.public()})
 
 
 def _record_payment(user, plan, event_type, event):

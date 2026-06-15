@@ -17,6 +17,7 @@ import hmac
 import json
 import os
 import time
+from datetime import datetime
 
 import httpx
 
@@ -161,6 +162,88 @@ def plan_from_event(event: dict) -> tuple[str | None, str | None]:
     if plan and plan not in ("free",) and get_plan(plan)["id"] != plan:
         plan = None  # unknown plan id
     return user_id, plan
+
+
+def _api_get(path: str) -> dict:
+    """GET a Dodo API path with auth, returning parsed JSON (raises BillingError)."""
+    try:
+        resp = httpx.get(
+            f"{Config.DODO_API_BASE.rstrip('/')}{path}",
+            headers={"Authorization": f"Bearer {Config.DODO_API_KEY}"},
+            timeout=15,
+        )
+    except Exception as exc:  # noqa: BLE001
+        raise BillingError(f"Could not reach Dodo Payments: {exc}") from exc
+    if not resp.is_success:
+        raise BillingError(f"Dodo Payments error {resp.status_code}: {resp.text}")
+    return resp.json()
+
+
+def _parse_dt(value):
+    """Parse Dodo's ISO timestamps to a naive UTC datetime, tolerating 'Z'."""
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00")).replace(tzinfo=None)
+    except (ValueError, AttributeError):
+        return None
+
+
+def _customer_id_for(email: str) -> str | None:
+    """Resolve a user's Dodo customer id by email (Dodo filters /customers by email)."""
+    items = _api_get(f"/customers?email={email}").get("items") or []
+    for c in items:
+        if (c.get("email") or "").lower() == (email or "").lower():
+            return c.get("customer_id") or c.get("id")
+    return None
+
+
+def fetch_customer_billing(user) -> dict:
+    """Pull a user's real payments and active subscription straight from Dodo.
+
+    Used by the "Confirm payment" sync so a paid user can reconcile their account
+    even if a webhook was missed. Returns:
+        {"payments": [ {payment_id, amount, currency, status, plan,
+                        subscription_id, created_at}, ... ],
+         "active_plan": <plan id or None>}
+    """
+    if not is_configured():
+        raise BillingError("Dodo Payments is not configured.")
+
+    cid = _customer_id_for(user.email)
+    if not cid:
+        return {"payments": [], "active_plan": None}
+
+    def is_mine(meta: dict) -> bool:
+        # Customer is email-bound, but prefer an explicit metadata match when present.
+        uid = (meta or {}).get("user_id")
+        return uid is None or uid == user.id
+
+    payments = []
+    for p in (_api_get(f"/payments?customer_id={cid}").get("items") or []):
+        meta = p.get("metadata") or {}
+        if not is_mine(meta):
+            continue
+        payments.append({
+            "payment_id": p.get("payment_id") or p.get("id"),
+            "amount": p.get("total_amount") or p.get("amount"),
+            "currency": p.get("currency"),
+            "status": p.get("status"),
+            "plan": meta.get("plan"),
+            "subscription_id": p.get("subscription_id"),
+            "created_at": _parse_dt(p.get("created_at")),
+        })
+
+    active_plan = None
+    for s in (_api_get(f"/subscriptions?customer_id={cid}").get("items") or []):
+        meta = s.get("metadata") or {}
+        if not is_mine(meta) or s.get("status") != "active":
+            continue
+        plan = meta.get("plan")
+        if plan and get_plan(plan)["id"] == plan:
+            active_plan = plan
+
+    return {"payments": payments, "active_plan": active_plan}
 
 
 def payment_from_event(event: dict) -> dict:
