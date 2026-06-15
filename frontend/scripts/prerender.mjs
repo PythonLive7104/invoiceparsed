@@ -33,7 +33,13 @@ import {
   faqPageSchema,
   articleSchema,
   breadcrumbSchema,
+  organizationSchema,
+  websiteSchema,
 } from "../src/lib/schema.js";
+
+// Site-wide entity schema, emitted into every page's <head> so AI engines and
+// no-JS crawlers always see the Organization (+ sameAs) and WebSite entities.
+const SITE_SCHEMAS = [organizationSchema(), websiteSchema()];
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DIST = resolve(__dirname, "../dist");
@@ -249,7 +255,7 @@ function render(page) {
     throw new Error("SEO:START/SEO:END markers not found in dist/index.html");
   }
   let html = template.replace(SEO_BLOCK, headBlock(page));
-  const ld = page.schemas
+  const ld = [...SITE_SCHEMAS, ...page.schemas]
     .map((s) => `<script type="application/ld+json">${JSON.stringify(s)}</script>`)
     .join("\n    ");
   if (ld) html = html.replace("</head>", `    ${ld}\n  </head>`);

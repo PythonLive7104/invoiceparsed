@@ -30,10 +30,13 @@ export function websiteSchema() {
   };
 }
 
-/** SoftwareApplication — homepage. */
-export function softwareApplicationSchema({
-  rating = { value: "4.8", count: "127" },
-} = {}) {
+/** SoftwareApplication — homepage.
+ *
+ * `rating` is omitted by default: aggregateRating must reflect real, verifiable
+ * reviews. Google's structured-data policies forbid fabricated ratings, and AI
+ * engines distrust them. Pass { value, count } only once real review data exists.
+ */
+export function softwareApplicationSchema({ rating = null } = {}) {
   return {
     "@context": "https://schema.org",
     "@type": "SoftwareApplication",
