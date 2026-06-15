@@ -275,10 +275,22 @@ function render(page) {
     .map((s) => `<script type="application/ld+json">${JSON.stringify(s)}</script>`)
     .join("\n    ");
   if (ld) html = html.replace("</head>", `    ${ld}\n  </head>`);
-  // Inject crawler-visible article content into the SPA mount point. React
-  // (createRoot) replaces it on hydration, so users still get the full app.
+  // Inject crawler-visible content into the SPA mount point. React (createRoot)
+  // replaces it on mount, so users get the full styled app. The content is
+  // visually hidden by default so it doesn't flash unstyled before JS runs;
+  // <noscript> reveals it for no-JS clients. Crawlers/AI engines read the raw
+  // text either way (CSS visibility doesn't affect text extraction).
   if (page.bodyHtml) {
-    html = html.replace('<div id="root"></div>', `<div id="root">${page.bodyHtml}</div>`);
+    const hideStyle =
+      "<style>#prerender{position:absolute;width:1px;height:1px;padding:0;margin:-1px;" +
+      "overflow:hidden;clip:rect(0,0,0,0);clip-path:inset(50%);white-space:nowrap;border:0}</style>" +
+      "<noscript><style>#prerender{position:static;width:auto;height:auto;margin:0;" +
+      "overflow:visible;clip:auto;clip-path:none;white-space:normal}</style></noscript>";
+    html = html.replace("</head>", `    ${hideStyle}\n  </head>`);
+    html = html.replace(
+      '<div id="root"></div>',
+      `<div id="root"><div id="prerender">${page.bodyHtml}</div></div>`,
+    );
   }
   return html;
 }
