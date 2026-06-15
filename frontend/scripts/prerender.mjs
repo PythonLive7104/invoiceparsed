@@ -296,4 +296,12 @@ for (const page of pages()) {
   writeFileSync(file, html, "utf8");
   count++;
 }
-console.log(`✓ prerendered ${count} routes with per-route <head> + JSON-LD`);
+
+// SPA-fallback shell for non-prerendered app routes (dashboard, /auth/*, deep
+// links). It keeps the default <head> but an EMPTY #root, so these routes don't
+// briefly flash the homepage's prerendered marketing body before React mounts.
+// `template` is the untouched Vite index.html (empty root). nginx points its
+// try_files fallback here instead of index.html.
+writeFileSync(resolve(DIST, "app.html"), template, "utf8");
+
+console.log(`✓ prerendered ${count} routes with per-route <head> + JSON-LD (+ app.html shell)`);
