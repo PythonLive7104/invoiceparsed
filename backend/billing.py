@@ -161,3 +161,20 @@ def plan_from_event(event: dict) -> tuple[str | None, str | None]:
     if plan and plan not in ("free",) and get_plan(plan)["id"] != plan:
         plan = None  # unknown plan id
     return user_id, plan
+
+
+def payment_from_event(event: dict) -> dict:
+    """Pull payment details out of a verified webhook event for recording.
+
+    Dodo nests the charge under `data`; field names vary slightly between the
+    payment and subscription payloads, so we check the common aliases.
+    """
+    data = event.get("data") or event
+    return {
+        "amount": data.get("total_amount") or data.get("amount"),
+        "currency": data.get("currency"),
+        "status": data.get("status"),
+        "payment_id": data.get("payment_id") or data.get("id"),
+        "subscription_id": data.get("subscription_id")
+        or (data.get("subscription") or {}).get("subscription_id"),
+    }

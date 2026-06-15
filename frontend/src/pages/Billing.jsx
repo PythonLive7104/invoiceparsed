@@ -1,4 +1,5 @@
 import { BillingPlans } from "@/components/dashboard/BillingPlans";
+import { PaymentHistory } from "@/components/dashboard/PaymentHistory";
 import { UsageMeter } from "@/components/dashboard/UsageMeter";
 import { useAuth } from "@/lib/auth.jsx";
 
@@ -20,6 +21,8 @@ export default function Billing() {
       </div>
 
       <BillingPlans />
+
+      <PaymentHistory />
     </div>
   );
 }

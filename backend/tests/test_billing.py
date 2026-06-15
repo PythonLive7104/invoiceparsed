@@ -94,6 +94,57 @@ def test_webhook_activates_plan(client, app, monkeypatch):
         assert User.query.get(user["id"]).plan == "pro"
 
 
+def test_webhook_records_payment_and_history_lists_it(client, app, monkeypatch):
+    secret = base64.b64encode(b"super-secret").decode()
+    user = make_user(app, plan="free")
+    event = {
+        "type": "payment.succeeded",
+        "data": {
+            "metadata": {"user_id": user["id"], "plan": "starter"},
+            "payment_id": "pay_abc123",
+            "subscription_id": "sub_xyz",
+            "total_amount": 1900,
+            "currency": "USD",
+            "status": "succeeded",
+        },
+    }
+    r = _signed_request(client, app, secret, event, monkeypatch=monkeypatch)
+    assert r.status_code == 200
+
+    # Plan activated and a payment row recorded.
+    from models import User
+    with app.app_context():
+        assert User.query.get(user["id"]).plan == "starter"
+
+    hist = client.get("/api/billing/payments", headers=auth_header(app, user))
+    assert hist.status_code == 200
+    rows = hist.get_json()["payments"]
+    assert len(rows) == 1
+    assert rows[0]["paymentId"] == "pay_abc123"
+    assert rows[0]["amount"] == 19.0  # cents → major units
+    assert rows[0]["plan"] == "starter"
+
+
+def test_webhook_payment_deduplicated_on_retry(client, app, monkeypatch):
+    secret = base64.b64encode(b"super-secret").decode()
+    user = make_user(app, plan="free")
+    event = {
+        "type": "payment.succeeded",
+        "data": {
+            "metadata": {"user_id": user["id"], "plan": "starter"},
+            "payment_id": "pay_dup",
+            "total_amount": 1900,
+            "currency": "USD",
+            "status": "succeeded",
+        },
+    }
+    _signed_request(client, app, secret, event, monkeypatch=monkeypatch)
+    _signed_request(client, app, secret, event, monkeypatch=monkeypatch)  # Dodo retry
+
+    hist = client.get("/api/billing/payments", headers=auth_header(app, user))
+    assert len(hist.get_json()["payments"]) == 1
+
+
 def test_webhook_cancellation_downgrades(client, app, monkeypatch):
     secret = base64.b64encode(b"super-secret").decode()
     user = make_user(app, plan="pro")

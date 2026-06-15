@@ -13,7 +13,7 @@ from flask_admin.contrib.sqla import ModelView
 
 from config import Config
 from extensions import db
-from models import ApiKey, Extraction, User, Webhook
+from models import ApiKey, Extraction, Payment, User, Webhook
 
 
 def _authorized() -> bool:
@@ -85,6 +85,15 @@ class WebhookAdmin(SecureModelView):
     column_filters = ("active",)
 
 
+class PaymentAdmin(SecureModelView):
+    column_list = ("created_at", "user_id", "plan", "amount", "currency", "status", "event_type", "provider_payment_id")
+    column_filters = ("plan", "status", "event_type")
+    column_searchable_list = ("provider_payment_id", "user_id")
+    column_default_sort = ("created_at", True)
+    can_create = False
+    can_edit = False
+
+
 def init_admin(app) -> None:
     """Attach the admin to the app if credentials are configured."""
     if not (Config.ADMIN_USER and Config.ADMIN_PASSWORD):
@@ -98,3 +107,4 @@ def init_admin(app) -> None:
     admin.add_view(ExtractionAdmin(Extraction, db.session))
     admin.add_view(ApiKeyAdmin(ApiKey, db.session))
     admin.add_view(WebhookAdmin(Webhook, db.session))
+    admin.add_view(PaymentAdmin(Payment, db.session))

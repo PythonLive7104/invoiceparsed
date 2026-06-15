@@ -34,6 +34,9 @@ class User(db.Model):
     webhooks = db.relationship(
         "Webhook", backref="user", cascade="all, delete-orphan", lazy="dynamic"
     )
+    payments = db.relationship(
+        "Payment", backref="user", cascade="all, delete-orphan", lazy="dynamic"
+    )
 
     def public(self) -> dict:
         return {
@@ -117,6 +120,43 @@ class ApiKey(db.Model):
             "prefix": self.prefix,
             "lastUsedAt": self.last_used_at.isoformat() + "Z" if self.last_used_at else None,
             "createdAt": self.created_at.isoformat() + "Z",
+        }
+
+
+class Payment(db.Model):
+    """A payment/subscription event received from Dodo Payments.
+
+    Recorded by the billing webhook so the user can see a history of charges and
+    confirm a payment landed — independent of whether it triggered a plan change.
+    """
+    __tablename__ = "payments"
+
+    id = db.Column(db.String, primary_key=True, default=_uuid)
+    user_id = db.Column(db.String, db.ForeignKey("users.id"), nullable=False, index=True)
+    # Plan this payment was for (from checkout metadata), when known.
+    plan = db.Column(db.String(20), nullable=True)
+    # Amount in the smallest currency unit (cents), as Dodo reports it.
+    amount = db.Column(db.Integer, nullable=True)
+    currency = db.Column(db.String(10), nullable=True)
+    # Dodo's status string (e.g. "succeeded") and the webhook event that produced it.
+    status = db.Column(db.String(40), nullable=True)
+    event_type = db.Column(db.String(60), nullable=True)
+    # Dodo identifiers, for cross-referencing in their dashboard.
+    provider_payment_id = db.Column(db.String(120), nullable=True, index=True)
+    provider_subscription_id = db.Column(db.String(120), nullable=True, index=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+
+    def public(self) -> dict:
+        return {
+            "id": self.id,
+            "plan": self.plan,
+            # Dodo reports amounts in cents; expose major units for display.
+            "amount": (self.amount / 100) if self.amount is not None else None,
+            "currency": self.currency,
+            "status": self.status,
+            "eventType": self.event_type,
+            "paymentId": self.provider_payment_id,
+            "createdAt": self.created_at.isoformat() + "Z" if self.created_at else None,
         }
 
 
