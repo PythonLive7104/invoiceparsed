@@ -345,6 +345,20 @@ export default function Landing() {
                 or sign in →
               </Link>
             </div>
+            <div className="relative mt-8 flex justify-center">
+              <a
+                href="https://www.producthunt.com/products/invoiceparsed?embed=true&utm_source=badge-featured&utm_medium=badge&utm_campaign=badge-invoiceparsed"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                <img
+                  alt="InvoiceParsed - Extract invoices, receipts & bank statements with AI | Product Hunt"
+                  width="250"
+                  height="54"
+                  src="https://api.producthunt.com/widgets/embed-image/v1/featured.svg?post_id=1170163&theme=dark&t=1781676755175"
+                />
+              </a>
+            </div>
           </Reveal>
         </div>
       </section>
