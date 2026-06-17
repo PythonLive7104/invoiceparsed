@@ -345,7 +345,7 @@ export default function Landing() {
                 or sign in →
               </Link>
             </div>
-            <div className="relative mt-8 flex justify-center">
+            <div className="relative mt-8 flex flex-wrap items-center justify-center gap-4">
               <a
                 href="https://www.producthunt.com/products/invoiceparsed?embed=true&utm_source=badge-featured&utm_medium=badge&utm_campaign=badge-invoiceparsed"
                 target="_blank"
@@ -356,6 +356,16 @@ export default function Landing() {
                   width="250"
                   height="54"
                   src="https://api.producthunt.com/widgets/embed-image/v1/featured.svg?post_id=1170163&theme=dark&t=1781676755175"
+                />
+              </a>
+              <a
+                href="https://www.shipit.buzz/products/invoiceparsed?ref=badge"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                <img
+                  src="https://www.shipit.buzz/api/products/invoiceparsed/badge?theme=light"
+                  alt="Featured on Shipit"
                 />
               </a>
             </div>
