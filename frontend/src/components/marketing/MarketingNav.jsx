@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { motion } from "framer-motion";
 import { Menu, X } from "lucide-react";
 import { Link } from "react-router-dom";
 import { Logo } from "@/components/ui/Logo";
@@ -47,7 +48,12 @@ export function MarketingNav() {
           : "border-b border-transparent",
       )}
     >
-      <nav className="container-page flex h-16 items-center justify-between">
+      <motion.nav
+        initial={{ opacity: 0, y: -20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 1, ease: "easeOut" }}
+        className="container-page flex h-16 items-center justify-between"
+      >
         <Logo />
 
         <div className="hidden items-center gap-1 md:flex">
@@ -80,7 +86,7 @@ export function MarketingNav() {
         >
           {open ? <X size={20} /> : <Menu size={20} />}
         </button>
-      </nav>
+      </motion.nav>
 
       {open && (
         <div className="border-t border-white/[0.06] bg-ink-950/95 px-5 py-4 md:hidden">
