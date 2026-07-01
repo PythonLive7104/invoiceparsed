@@ -18,7 +18,7 @@ from auth import (
     verify_reset_token,
     verify_verify_token,
 )
-from emails import send_password_reset, send_verification
+from emails import send_password_reset, send_verification, send_welcome
 from extensions import db, limiter
 from models import Extraction, User
 from usage import usage_for
@@ -221,6 +221,8 @@ def verify_email():
     if not user.email_verified:
         user.email_verified = True
         db.session.commit()
+        # First-time confirmation — welcome them aboard.
+        send_welcome(user.email, user.name)
 
     return jsonify({"user": user.public(), "token": issue_token(user)})
 

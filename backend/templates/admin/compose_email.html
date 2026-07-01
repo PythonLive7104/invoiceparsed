@@ -1,0 +1,72 @@
+{% extends 'admin/master.html' %}
+
+{% block body %}
+<div class="container-fluid" style="margin-top:16px;max-width:760px">
+  <h3 style="margin-bottom:8px">Compose email</h3>
+  <p style="color:#6b7280">Sends a branded InvoiceParsed email. Plain text is
+  formatted automatically — blank lines start a new paragraph.</p>
+
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% for category, msg in messages %}
+      <div class="alert alert-{{ 'danger' if category == 'error' else 'success' }}">{{ msg }}</div>
+    {% endfor %}
+  {% endwith %}
+
+  {% if result %}
+    <div class="alert alert-info">Delivered {{ result.sent }} of {{ result.attempted }} message(s).</div>
+  {% endif %}
+
+  <form method="post">
+    <div class="form-group">
+      <label>Audience</label>
+      <select class="form-control" name="audience" id="audience" onchange="toggleAudience()">
+        <option value="all">All verified users</option>
+        <option value="plan">Users on a specific plan</option>
+        <option value="addresses">Specific email addresses</option>
+      </select>
+    </div>
+
+    <div class="form-group" id="plan-row" style="display:none">
+      <label>Plan</label>
+      <select class="form-control" name="plan">
+        {% for p in plans %}<option value="{{ p }}">{{ p.capitalize() }}</option>{% endfor %}
+      </select>
+    </div>
+
+    <div class="form-group" id="addresses-row" style="display:none">
+      <label>Addresses</label>
+      <textarea class="form-control" name="addresses" rows="3"
+                placeholder="One per line, or comma-separated"></textarea>
+    </div>
+
+    <div class="form-group">
+      <label>Subject</label>
+      <input class="form-control" name="subject" required>
+    </div>
+
+    <div class="form-group">
+      <label>Heading <span style="color:#9ca3af">(shown at the top of the email; defaults to the subject)</span></label>
+      <input class="form-control" name="heading">
+    </div>
+
+    <div class="form-group">
+      <label>Message</label>
+      <textarea class="form-control" name="message" rows="10" required
+                placeholder="Write your message here…"></textarea>
+    </div>
+
+    <button class="btn btn-primary" type="submit"
+            onclick="return confirm('Send this email to the selected audience?')">Send email</button>
+    <a class="btn btn-default" href="{{ url_for('admin.index') }}">Cancel</a>
+  </form>
+</div>
+
+<script>
+  function toggleAudience() {
+    var v = document.getElementById('audience').value;
+    document.getElementById('plan-row').style.display = (v === 'plan') ? 'block' : 'none';
+    document.getElementById('addresses-row').style.display = (v === 'addresses') ? 'block' : 'none';
+  }
+  toggleAudience();
+</script>
+{% endblock %}

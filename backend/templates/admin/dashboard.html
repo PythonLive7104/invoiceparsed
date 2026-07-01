@@ -1,0 +1,53 @@
+{% extends 'admin/master.html' %}
+
+{% block body %}
+<div class="container-fluid" style="margin-top:16px">
+  <h3 style="margin-bottom:20px">InvoiceParsed overview</h3>
+
+  <div class="row">
+    {% macro stat(label, value) %}
+      <div class="col-md-3 col-sm-6" style="margin-bottom:16px">
+        <div style="border:1px solid #e2e2e2;border-radius:10px;padding:18px 20px;background:#fff">
+          <div style="font-size:28px;font-weight:700;color:#4338ca">{{ value }}</div>
+          <div style="color:#6b7280;font-size:13px;margin-top:4px">{{ label }}</div>
+        </div>
+      </div>
+    {% endmacro %}
+
+    {{ stat('Total users', stats.total_users) }}
+    {{ stat('Verified users', stats.verified_users) }}
+    {{ stat('Paying users', stats.paying_users) }}
+    {{ stat('Extractions', stats.total_extractions) }}
+    {{ stat('Revenue', '$%.2f' % stats.revenue) }}
+    {% for plan, count in stats.plan_counts.items() %}
+      {{ stat(plan.capitalize() + ' plan', count) }}
+    {% endfor %}
+  </div>
+
+  <div style="margin-top:24px">
+    <h4 style="margin-bottom:12px">Recent sign-ups</h4>
+    <table class="table table-striped" style="background:#fff">
+      <thead>
+        <tr><th>Email</th><th>Name</th><th>Plan</th><th>Verified</th><th>Joined</th></tr>
+      </thead>
+      <tbody>
+        {% for u in stats.recent_users %}
+          <tr>
+            <td>{{ u.email }}</td>
+            <td>{{ u.name or '—' }}</td>
+            <td>{{ u.plan }}</td>
+            <td>{{ '✓' if u.email_verified else '—' }}</td>
+            <td>{{ u.created_at.strftime('%Y-%m-%d %H:%M') if u.created_at else '—' }}</td>
+          </tr>
+        {% else %}
+          <tr><td colspan="5">No users yet.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <p style="margin-top:20px">
+    <a class="btn btn-primary" href="{{ url_for('email.index') }}">Compose an email →</a>
+  </p>
+</div>
+{% endblock %}

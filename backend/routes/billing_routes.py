@@ -11,6 +11,7 @@ from flask import Blueprint, current_app, g, jsonify, request
 
 import billing
 from auth import login_required
+from emails import send_payment_receipt, send_plan_changed
 from extensions import db
 from models import Payment, User
 from plans import PLANS
@@ -46,6 +47,7 @@ def checkout():
     if plan == "free" or not billing.is_configured():
         g.user.plan = plan
         db.session.commit()
+        send_plan_changed(g.user.email, plan, g.user.name)
         return jsonify({"user": g.user.public(), "demo": True})
 
     # Dodo redirects here after checkout and appends its own status params; we add
@@ -69,6 +71,7 @@ def upgrade():
 
     g.user.plan = plan
     db.session.commit()
+    send_plan_changed(g.user.email, plan, g.user.name)
     return jsonify({"user": g.user.public(), "demo": True})
 
 
@@ -149,16 +152,23 @@ def _record_payment(user, plan, event_type, event):
     payment_id = details.get("payment_id")
     if payment_id and Payment.query.filter_by(provider_payment_id=payment_id).first():
         return  # already recorded (Dodo retried this delivery)
+    amount = details.get("amount")
+    status = details.get("status") or event_type
     db.session.add(Payment(
         user_id=user.id,
         plan=plan,
-        amount=details.get("amount"),
+        amount=amount,
         currency=details.get("currency"),
-        status=details.get("status") or event_type,
+        status=status,
         event_type=event_type,
         provider_payment_id=payment_id,
         provider_subscription_id=details.get("subscription_id"),
     ))
+    # Email a receipt for successful charges (amounts arrive from Dodo in cents).
+    if status == "succeeded" and amount is not None:
+        send_payment_receipt(
+            user.email, amount / 100, details.get("currency"), plan, payment_id, user.name
+        )
 
 
 @billing_bp.post("/billing/webhook")
@@ -198,13 +208,18 @@ def webhook():
     if event_type in _ACTIVATING or event_type.startswith("payment."):
         _record_payment(user, plan, event_type, event)
 
+    new_plan = None
     if event_type in _ACTIVATING and plan:
+        new_plan = plan
         user.plan = plan
         logger.info("Activated plan=%s for user_id=%s via %s", plan, user.id, event_type)
     elif event_type in _DEACTIVATING:
+        new_plan = "free"
         user.plan = "free"
         logger.info("Downgraded user_id=%s to free via %s", user.id, event_type)
 
     db.session.commit()
+    if new_plan:
+        send_plan_changed(user.email, new_plan, user.name)
     # Always 200 so Dodo doesn't retry for events we intentionally ignore.
     return jsonify({"received": True})
