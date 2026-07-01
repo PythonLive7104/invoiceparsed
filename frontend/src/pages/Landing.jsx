@@ -368,6 +368,18 @@ export default function Landing() {
                   alt="Featured on Shipit"
                 />
               </a>
+              <a
+                href="https://www.spotlitely.com/l/invoiceparsed-ai"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                <img
+                  src="https://www.spotlitely.com/badge.svg"
+                  alt="Featured on Spotlitely"
+                  width="172"
+                  height="20"
+                />
+              </a>
             </div>
           </Reveal>
         </div>
