@@ -1,147 +1,183 @@
-"""Dodo Payments integration.
+"""Paystack integration.
 
-Two halves:
+Three halves:
   - create_checkout(): start a hosted subscription checkout for a plan and return
-    the payment link the browser should be sent to.
-  - verify_webhook(): validate an incoming Dodo webhook using the Standard
-    Webhooks signing scheme (https://www.standardwebhooks.com), then the caller
-    applies the plan change.
+    the authorization URL the browser should be sent to.
+  - verify_transaction(): confirm a transaction by its reference. Paystack sends
+    the reference back on the callback URL, so the return page can activate the
+    plan immediately instead of waiting on a webhook.
+  - verify_webhook(): validate an incoming Paystack webhook (HMAC-SHA512 of the
+    raw body, keyed with the secret key), then the caller applies the plan change.
 
-Everything is gated behind configuration: if DODO_API_KEY isn't set the app runs
-in "demo mode" and plan changes are applied instantly without real payment (see
-routes/billing_routes.py). This keeps local dev and the demo working unchanged.
+Everything is gated behind configuration: if PAYSTACK_SECRET_KEY isn't set the app
+runs in "demo mode" and plan changes are applied instantly without real payment
+(see routes/billing_routes.py). This keeps local dev and the demo working unchanged.
 """
-import base64
 import hashlib
 import hmac
 import json
 import os
-import time
 from datetime import datetime
+from urllib.parse import quote
 
 import httpx
 
 from config import Config
-from plans import get_plan
+from plans import PLANS, get_plan
 
-# Maps our internal plan id → the configured Dodo product/price id.
-_PRODUCT_ENV = {
-    "starter": "DODO_PRODUCT_STARTER",
-    "pro": "DODO_PRODUCT_PRO",
-    "business": "DODO_PRODUCT_BUSINESS",
+# Maps our internal plan id → the env var holding the configured Paystack plan code.
+_PLAN_ENV = {
+    "starter": "PAYSTACK_PLAN_STARTER",
+    "pro": "PAYSTACK_PLAN_PRO",
+    "business": "PAYSTACK_PLAN_BUSINESS",
 }
+
+# Paystack subscription states that still entitle the user to their plan.
+# "non-renewing" means they cancelled but the paid period hasn't ended yet.
+_ENTITLING_STATUSES = {"active", "non-renewing"}
+
+# Paystack reports a paid charge as "success"; "succeeded" is accepted so rows
+# written by the previous provider still read as paid.
+SUCCESS_STATUSES = {"success", "succeeded"}
 
 
 def is_configured() -> bool:
-    return bool(Config.DODO_API_KEY)
+    return bool(Config.PAYSTACK_SECRET_KEY)
 
 
-def product_id_for(plan: str) -> str | None:
-    import os
-    env_key = _PRODUCT_ENV.get(plan)
+def plan_code_for(plan: str) -> str | None:
+    """The Paystack plan code (PLN_…) configured for one of our plan ids."""
+    env_key = _PLAN_ENV.get(plan)
     return os.getenv(env_key) if env_key else None
 
 
+def plan_for_code(code: str | None) -> str | None:
+    """Reverse of plan_code_for: our plan id for a Paystack plan code.
+
+    Needed because subscription.* webhooks carry the plan code but no metadata.
+    """
+    if not code:
+        return None
+    for plan_id in _PLAN_ENV:
+        if plan_code_for(plan_id) == code:
+            return plan_id
+    return None
+
+
 class BillingError(Exception):
-    """Raised when a checkout cannot be created."""
+    """Raised when a checkout or API call cannot be completed."""
+
+
+def _headers() -> dict:
+    return {
+        "Authorization": f"Bearer {Config.PAYSTACK_SECRET_KEY}",
+        "Content-Type": "application/json",
+    }
+
+
+def _unwrap(resp) -> dict:
+    """Paystack wraps every response as {status, message, data}. Return `data`."""
+    if not resp.is_success:
+        raise BillingError(f"Paystack error {resp.status_code}: {resp.text}")
+    try:
+        body = resp.json()
+    except ValueError as exc:
+        raise BillingError("Paystack returned a non-JSON response.") from exc
+    if not body.get("status"):
+        raise BillingError(f"Paystack error: {body.get('message') or 'unknown'}")
+    return body.get("data") or {}
 
 
 def create_checkout(user, plan: str, return_url: str) -> str:
-    """Create a Dodo subscription checkout and return the hosted payment link.
+    """Initialize a Paystack transaction and return the hosted checkout URL.
 
-    We attach the user id and target plan as metadata so the webhook can apply
-    the change to the right account after payment succeeds.
+    Passing `plan` makes Paystack create a subscription once the charge succeeds,
+    and the plan's own amount/currency take precedence over the `amount` we send.
+    We attach the user id and target plan as metadata so both the callback and the
+    webhook can apply the change to the right account.
     """
     if not is_configured():
-        raise BillingError("Dodo Payments is not configured.")
-    product_id = product_id_for(plan)
-    if not product_id:
-        raise BillingError(f"No Dodo product configured for the {plan} plan.")
+        raise BillingError("Paystack is not configured.")
+    plan_code = plan_code_for(plan)
+    if not plan_code:
+        raise BillingError(f"No Paystack plan configured for the {plan} plan.")
 
     payload = {
-        "product_id": product_id,
-        "quantity": 1,
-        "payment_link": True,
-        "return_url": return_url,
-        "customer": {"email": user.email, "name": user.name or user.email},
-        # Dodo requires a billing object; the hosted checkout page collects the
-        # real address from the customer. Country is a required placeholder.
-        "billing": {
-            "city": "",
-            "country": os.getenv("DODO_DEFAULT_COUNTRY", "US"),
-            "state": "",
-            "street": "",
-            "zipcode": "",
-        },
+        "email": user.email,
+        # Paystack takes the smallest currency unit (cents / kobo).
+        "amount": int(get_plan(plan)["price"]) * 100,
+        "currency": Config.PAYSTACK_CURRENCY,
+        "plan": plan_code,
+        "callback_url": return_url,
         "metadata": {"user_id": user.id, "plan": plan},
     }
     try:
         resp = httpx.post(
-            f"{Config.DODO_API_BASE.rstrip('/')}/subscriptions",
-            headers={
-                "Authorization": f"Bearer {Config.DODO_API_KEY}",
-                "Content-Type": "application/json",
-            },
+            f"{Config.PAYSTACK_API_BASE.rstrip('/')}/transaction/initialize",
+            headers=_headers(),
             json=payload,
             timeout=15,
         )
     except Exception as exc:  # noqa: BLE001
-        raise BillingError(f"Could not reach Dodo Payments: {exc}") from exc
+        raise BillingError(f"Could not reach Paystack: {exc}") from exc
 
-    if not resp.is_success:
-        raise BillingError(f"Dodo Payments error {resp.status_code}: {resp.text}")
-
-    data = resp.json()
-    link = data.get("payment_link") or data.get("url") or data.get("checkout_url")
-    if not link:
-        raise BillingError("Dodo Payments did not return a payment link.")
-    return link
+    url = _unwrap(resp).get("authorization_url")
+    if not url:
+        raise BillingError("Paystack did not return a checkout URL.")
+    return url
 
 
-# ─── Webhook verification (Standard Webhooks) ────────────────────────────────
-def _secret_key() -> bytes:
-    secret = Config.DODO_WEBHOOK_SECRET
-    if secret.startswith("whsec_"):
-        secret = secret[len("whsec_"):]
-    # Standard Webhooks secrets are base64-encoded.
-    try:
-        return base64.b64decode(secret)
-    except Exception:
-        return secret.encode("utf-8")
+def _api_get(path: str, *, allow_missing: bool = False) -> dict | None:
+    """GET a Paystack path with auth, returning the unwrapped `data` object.
 
-
-def _sign(msg_id: str, timestamp: str, body: bytes) -> str:
-    signed = f"{msg_id}.{timestamp}.".encode("utf-8") + body
-    digest = hmac.new(_secret_key(), signed, hashlib.sha256).digest()
-    return base64.b64encode(digest).decode("ascii")
-
-
-def verify_webhook(headers, raw_body: bytes, *, tolerance: int = 300) -> dict:
-    """Verify a Dodo webhook and return the parsed JSON event.
-
-    Raises ValueError if the signature/timestamp is missing or invalid.
-    `headers` is any case-insensitive mapping (e.g. flask request.headers).
+    With allow_missing=True a 404 returns None instead of raising (Paystack 404s
+    when a customer has never transacted).
     """
-    if not Config.DODO_WEBHOOK_SECRET:
-        raise ValueError("DODO_WEBHOOK_SECRET is not configured.")
-
-    msg_id = headers.get("webhook-id")
-    timestamp = headers.get("webhook-timestamp")
-    signature = headers.get("webhook-signature")
-    if not (msg_id and timestamp and signature):
-        raise ValueError("Missing webhook signature headers.")
-
-    # Reject stale/replayed messages.
     try:
-        if abs(time.time() - int(timestamp)) > tolerance:
-            raise ValueError("Webhook timestamp outside tolerance.")
-    except (TypeError, ValueError) as exc:
-        raise ValueError("Invalid webhook timestamp.") from exc
+        resp = httpx.get(
+            f"{Config.PAYSTACK_API_BASE.rstrip('/')}{path}",
+            headers=_headers(),
+            timeout=15,
+        )
+    except Exception as exc:  # noqa: BLE001
+        raise BillingError(f"Could not reach Paystack: {exc}") from exc
+    if allow_missing and resp.status_code == 404:
+        return None
+    return _unwrap(resp)
 
-    expected = _sign(msg_id, timestamp, raw_body)
-    # The header may carry several space-separated "v1,<sig>" entries.
-    candidates = [part.split(",", 1)[-1] for part in signature.split(" ") if part]
-    if not any(hmac.compare_digest(expected, cand) for cand in candidates):
+
+def verify_transaction(reference: str) -> dict:
+    """Fetch a transaction by reference so we can trust its status server-side.
+
+    This is what the post-checkout return page calls: Paystack redirects back with
+    ?reference=…, and a verify call tells us authoritatively whether it was paid.
+    """
+    if not is_configured():
+        raise BillingError("Paystack is not configured.")
+    return _api_get(f"/transaction/verify/{quote(str(reference), safe='')}") or {}
+
+
+# ─── Webhook verification ────────────────────────────────────────────────────
+def _sign(raw_body: bytes) -> str:
+    """Paystack's signature: HMAC-SHA512 of the raw body, keyed with the secret key."""
+    return hmac.new(
+        Config.PAYSTACK_SECRET_KEY.encode("utf-8"), raw_body, hashlib.sha512
+    ).hexdigest()
+
+
+def verify_webhook(headers, raw_body: bytes) -> dict:
+    """Verify a Paystack webhook and return the parsed JSON event.
+
+    Raises ValueError if the signature is missing or invalid. `headers` is any
+    case-insensitive mapping (e.g. flask request.headers).
+    """
+    if not Config.PAYSTACK_SECRET_KEY:
+        raise ValueError("PAYSTACK_SECRET_KEY is not configured.")
+
+    signature = headers.get("x-paystack-signature")
+    if not signature:
+        raise ValueError("Missing webhook signature header.")
+    if not hmac.compare_digest(_sign(raw_body), signature):
         raise ValueError("Webhook signature mismatch.")
 
     try:
@@ -150,37 +186,74 @@ def verify_webhook(headers, raw_body: bytes, *, tolerance: int = 300) -> dict:
         raise ValueError("Invalid webhook body.") from exc
 
 
-def plan_from_event(event: dict) -> tuple[str | None, str | None]:
-    """Pull (user_id, plan) out of a verified webhook event's metadata.
+# ─── Reading events ──────────────────────────────────────────────────────────
+def _metadata(data: dict) -> dict:
+    """Paystack echoes metadata back as an object, but sometimes as a JSON string."""
+    meta = data.get("metadata")
+    if isinstance(meta, str):
+        try:
+            meta = json.loads(meta)
+        except json.JSONDecodeError:
+            return {}
+    return meta if isinstance(meta, dict) else {}
 
-    Looks in the common locations Dodo nests data/metadata under.
+
+def _plan_code_in(data: dict) -> str | None:
+    """Dig the plan code out of a payload: `plan` is an object on subscription
+    events, a bare code on some charges, and `plan_object` in transaction lists."""
+    plan = data.get("plan")
+    if isinstance(plan, dict):
+        return plan.get("plan_code")
+    if isinstance(plan, str) and plan:
+        return plan
+    return (data.get("plan_object") or {}).get("plan_code")
+
+
+def plan_from_event(event: dict) -> tuple[str | None, str | None]:
+    """Pull (user_id, plan) out of a verified webhook event.
+
+    charge.success carries our checkout metadata. subscription.* events don't, so
+    we fall back to resolving the plan from the Paystack plan code (and the caller
+    falls back to the customer email for the user — see customer_email_from_event).
     """
     data = event.get("data") or event
-    meta = data.get("metadata") or (data.get("subscription") or {}).get("metadata") or {}
+    meta = _metadata(data)
     user_id = meta.get("user_id")
-    plan = meta.get("plan")
-    if plan and plan not in ("free",) and get_plan(plan)["id"] != plan:
+    plan = meta.get("plan") or plan_for_code(_plan_code_in(data))
+    if plan and plan not in PLANS:
         plan = None  # unknown plan id
     return user_id, plan
 
 
-def _api_get(path: str) -> dict:
-    """GET a Dodo API path with auth, returning parsed JSON (raises BillingError)."""
-    try:
-        resp = httpx.get(
-            f"{Config.DODO_API_BASE.rstrip('/')}{path}",
-            headers={"Authorization": f"Bearer {Config.DODO_API_KEY}"},
-            timeout=15,
-        )
-    except Exception as exc:  # noqa: BLE001
-        raise BillingError(f"Could not reach Dodo Payments: {exc}") from exc
-    if not resp.is_success:
-        raise BillingError(f"Dodo Payments error {resp.status_code}: {resp.text}")
-    return resp.json()
+def customer_email_from_event(event: dict) -> str | None:
+    data = event.get("data") or event
+    return (data.get("customer") or {}).get("email")
+
+
+def payment_from_event(event: dict) -> dict:
+    """Pull payment details out of a verified webhook event for recording."""
+    data = event.get("data") or event
+    return payment_from_transaction(data)
+
+
+def payment_from_transaction(txn: dict) -> dict:
+    """Normalise a Paystack transaction (from a webhook, a verify, or a list)."""
+    meta = _metadata(txn)
+    return {
+        "payment_id": txn.get("reference") or txn.get("id"),
+        # Paystack amounts are already in the smallest currency unit.
+        "amount": txn.get("amount"),
+        "currency": txn.get("currency"),
+        "status": txn.get("status"),
+        "plan": meta.get("plan") or plan_for_code(_plan_code_in(txn)),
+        "subscription_id": txn.get("subscription_code")
+        or (txn.get("subscription") or {}).get("subscription_code"),
+        "created_at": _parse_dt(txn.get("paid_at") or txn.get("created_at")),
+    }
 
 
 def _parse_dt(value):
-    """Parse Dodo's ISO timestamps to a naive UTC datetime, tolerating 'Z'."""
+    """Parse Paystack's ISO timestamps to a naive UTC datetime, tolerating 'Z'."""
     if not value:
         return None
     try:
@@ -189,17 +262,9 @@ def _parse_dt(value):
         return None
 
 
-def _customer_id_for(email: str) -> str | None:
-    """Resolve a user's Dodo customer id by email (Dodo filters /customers by email)."""
-    items = _api_get(f"/customers?email={email}").get("items") or []
-    for c in items:
-        if (c.get("email") or "").lower() == (email or "").lower():
-            return c.get("customer_id") or c.get("id")
-    return None
-
-
+# ─── Reconciliation ──────────────────────────────────────────────────────────
 def fetch_customer_billing(user) -> dict:
-    """Pull a user's real payments and active subscription straight from Dodo.
+    """Pull a user's real transactions and active subscription straight from Paystack.
 
     Used by the "Confirm payment" sync so a paid user can reconcile their account
     even if a webhook was missed. Returns:
@@ -208,56 +273,32 @@ def fetch_customer_billing(user) -> dict:
          "active_plan": <plan id or None>}
     """
     if not is_configured():
-        raise BillingError("Dodo Payments is not configured.")
+        raise BillingError("Paystack is not configured.")
 
-    cid = _customer_id_for(user.email)
-    if not cid:
+    # Paystack looks customers up by email or customer code on the same route.
+    customer = _api_get(f"/customer/{quote(user.email, safe='')}", allow_missing=True)
+    if not customer:
         return {"payments": [], "active_plan": None}
 
     def is_mine(meta: dict) -> bool:
-        # Customer is email-bound, but prefer an explicit metadata match when present.
+        # The customer is email-bound, but prefer an explicit metadata match.
         uid = (meta or {}).get("user_id")
         return uid is None or uid == user.id
 
     payments = []
-    for p in (_api_get(f"/payments?customer_id={cid}").get("items") or []):
-        meta = p.get("metadata") or {}
-        if not is_mine(meta):
+    txns = _api_get(f"/transaction?customer={customer['id']}&perPage=50") or []
+    for txn in txns:
+        if not is_mine(_metadata(txn)):
             continue
-        payments.append({
-            "payment_id": p.get("payment_id") or p.get("id"),
-            "amount": p.get("total_amount") or p.get("amount"),
-            "currency": p.get("currency"),
-            "status": p.get("status"),
-            "plan": meta.get("plan"),
-            "subscription_id": p.get("subscription_id"),
-            "created_at": _parse_dt(p.get("created_at")),
-        })
+        payments.append(payment_from_transaction(txn))
 
+    # The customer payload embeds their subscriptions, so no second call needed.
     active_plan = None
-    for s in (_api_get(f"/subscriptions?customer_id={cid}").get("items") or []):
-        meta = s.get("metadata") or {}
-        if not is_mine(meta) or s.get("status") != "active":
+    for sub in customer.get("subscriptions") or []:
+        if sub.get("status") not in _ENTITLING_STATUSES:
             continue
-        plan = meta.get("plan")
-        if plan and get_plan(plan)["id"] == plan:
+        plan = plan_for_code(_plan_code_in(sub))
+        if plan:
             active_plan = plan
 
     return {"payments": payments, "active_plan": active_plan}
-
-
-def payment_from_event(event: dict) -> dict:
-    """Pull payment details out of a verified webhook event for recording.
-
-    Dodo nests the charge under `data`; field names vary slightly between the
-    payment and subscription payloads, so we check the common aliases.
-    """
-    data = event.get("data") or event
-    return {
-        "amount": data.get("total_amount") or data.get("amount"),
-        "currency": data.get("currency"),
-        "status": data.get("status"),
-        "payment_id": data.get("payment_id") or data.get("id"),
-        "subscription_id": data.get("subscription_id")
-        or (data.get("subscription") or {}).get("subscription_id"),
-    }

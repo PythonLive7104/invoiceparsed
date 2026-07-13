@@ -24,7 +24,7 @@ export function BillingPlans() {
     try {
       const { data } = await api.post("/api/billing/checkout", { plan: planId });
       if (data?.url) {
-        // Live mode → hand off to the hosted Dodo Payments checkout.
+        // Live mode → hand off to the hosted Paystack checkout.
         window.location.href = data.url;
         return;
       }
@@ -41,8 +41,8 @@ export function BillingPlans() {
         <div className="flex items-start gap-2.5 rounded-xl border border-brand-400/20 bg-brand-500/[0.06] px-4 py-3 text-sm text-brand-200">
           <Info size={16} className="mt-0.5 shrink-0" />
           <span>
-            Demo mode — plan changes apply instantly. In production this opens a secure Dodo
-            Payments checkout.
+            Demo mode — plan changes apply instantly. In production this opens a secure Paystack
+            checkout.
           </span>
         </div>
       )}

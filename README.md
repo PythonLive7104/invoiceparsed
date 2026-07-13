@@ -111,7 +111,7 @@ Flask API (:5000)
    ├── /api/extract       upload → OpenAI vision → structured JSON  (enforces plan limit)
    ├── /api/extractions   list / get / delete / CSV download
    ├── /api/usage         monthly usage vs plan limit
-   └── /api/billing/upgrade   change plan (Dodo Payments stub)
+   └── /api/billing/upgrade   change plan (Paystack; demo stub when unconfigured)
         │
         ├── SQLite (users, extractions)   via SQLAlchemy
         └── OpenAI API                    via the openai SDK
@@ -146,9 +146,10 @@ React context ([frontend/src/lib/auth.jsx](frontend/src/lib/auth.jsx)).
 | GET    | `/api/extractions/<id>/file/<n>` | ✓/🔑 | Fetch an original page/file   |
 | GET    | `/api/usage`                 | ✓    | Usage vs plan limit               |
 | GET    | `/api/billing/config`        | —    | Whether billing is live or demo   |
-| POST   | `/api/billing/checkout`      | ✓    | Start Dodo checkout → `{url}` (or demo switch) |
+| POST   | `/api/billing/checkout`      | ✓    | Start Paystack checkout → `{url}` (or demo switch) |
 | POST   | `/api/billing/upgrade`       | ✓    | Instant plan switch (demo)        |
-| POST   | `/api/billing/webhook`       | 🔒   | Dodo webhook (Standard-Webhooks signed) |
+| POST   | `/api/billing/verify`        | ✓    | Verify a Paystack `reference` after checkout |
+| POST   | `/api/billing/webhook`       | 🔒   | Paystack webhook (HMAC-SHA512 signed) |
 | GET/POST/DELETE | `/api/keys[/<id>]`  | ✓    | Manage API keys (Pro)             |
 | GET/POST/DELETE | `/api/webhooks[/<id>]` | ✓ | Manage webhooks (Pro)            |
 | POST   | `/api/webhooks/<id>/test`    | ✓    | Send a test webhook               |
@@ -221,9 +222,9 @@ The `/api/extract` payload follows the PRD invoice schema — see
   upgrade prompts. `batch` and `multiPage` are plan capabilities gated
   server-side (Starter + Pro), exposed via `usage.capabilities`.
 - **History** — searchable table with view / CSV / delete.
-- **Billing** — Free / Starter / Pro / **Business** plans. Live **Dodo Payments**
-  hosted checkout when configured (plan applied via signed webhook), with an
-  instant-switch demo mode when no API key is set.
+- **Billing** — Free / Starter / Pro / **Business** plans. Live **Paystack**
+  hosted checkout when configured (plan applied on the verified callback and by
+  the signed webhook), with an instant-switch demo mode when no key is set.
 - **Abuse protection** — per-IP rate limiting on all endpoints, with a tighter
   budget on auth/credential routes (Flask-Limiter; Redis-backed in prod).
 - **B2C + B2B positioning** — the landing page has a "who it's for" split
@@ -245,7 +246,7 @@ pytest                 # runs the suite in backend/tests
 
 The suite covers auth + email verification, plan-capability gating (batch /
 multi-page / usage limits), webhook signing & retry/backoff, and billing
-(demo upgrade, Dodo checkout, signed webhooks). Tests use a temporary SQLite DB
+(demo upgrade, Paystack checkout, signed webhooks). Tests use a temporary SQLite DB
 and stub all external services — nothing leaves the machine.
 
 ## Going to production
@@ -260,10 +261,13 @@ and stub all external services — nothing leaves the machine.
   gunicorn -c gunicorn.conf.py wsgi:app
   ```
   Serve the frontend as a static build (`npm run build` → deploy `frontend/dist`).
-- **Payments (Dodo):** set `DODO_API_KEY`, `DODO_WEBHOOK_SECRET`, and the
-  `DODO_PRODUCT_*` ids. The billing UI then opens a hosted Dodo checkout via
-  `POST /api/billing/checkout`, and `POST /api/billing/webhook`
-  (Standard-Webhooks signature-verified) applies the plan on payment. With no
+- **Payments (Paystack):** set `PAYSTACK_SECRET_KEY` and the `PAYSTACK_PLAN_*`
+  codes (one recurring plan per paid tier, created in the Paystack dashboard).
+  The billing UI then opens a hosted Paystack checkout via
+  `POST /api/billing/checkout`. The plan is applied twice over, idempotently:
+  `POST /api/billing/verify` confirms the transaction reference the browser
+  returns with, and `POST /api/billing/webhook` (HMAC-SHA512 signature-verified
+  with the same secret key) handles the async confirmation and renewals. With no
   key set, billing runs in demo mode (instant switch).
 - **Rate limiting:** enabled by default (per-IP). In production set
   `RATELIMIT_STORAGE_URI=redis://...` so limits are shared across workers.

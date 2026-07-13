@@ -114,13 +114,16 @@ export function AuthProvider({ children }) {
     setUsage(null);
   }, []);
 
+  // Returns the refreshed user so callers can act on it without waiting for the
+  // context re-render (the checkout return page polls for the plan to flip).
   const refreshUsage = useCallback(async () => {
     try {
       const { data } = await api.get("/api/auth/me");
       setUser(data.user);
       setUsage(data.usage);
+      return data.user;
     } catch {
-      /* ignore */
+      return null;
     }
   }, []);
 

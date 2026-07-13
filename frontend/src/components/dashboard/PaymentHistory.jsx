@@ -46,7 +46,7 @@ export function PaymentHistory() {
     load();
   }, [load]);
 
-  // "Confirm payment" — reconcile against Dodo directly (catches missed
+  // "Confirm payment" — reconcile against Paystack directly (catches missed
   // webhooks), then refresh the plan/usage in the app shell.
   async function refresh() {
     setLoading(true);
@@ -75,7 +75,7 @@ export function PaymentHistory() {
       </div>
 
       <p className="mt-1.5 text-sm text-slate-400">
-        Charges confirmed by Dodo Payments appear here. Just paid and don't see your plan?
+        Charges confirmed by Paystack appear here. Just paid and don't see your plan?
         Click <span className="text-slate-300">Confirm payment</span> to refresh.
       </p>
 

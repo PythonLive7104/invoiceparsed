@@ -53,7 +53,7 @@ Set these for production in `backend/.env`:
 | `APP_URL` | `https://invoiceparsed.com` (used in email links) |
 | `FRONTEND_ORIGIN` | `https://invoiceparsed.com` (CORS allow-list) |
 | `GOOGLE_CLIENT_ID` | your Google OAuth client id (optional) |
-| `DODO_*` | leave blank until you have a Dodo account (billing runs in demo mode) |
+| `PAYSTACK_*` | leave blank until you have a Paystack account (billing runs in demo mode) |
 
 > The frontend is built **same-origin** (`VITE_API_URL=""`), so the browser calls
 > `/api` on your domain and nginx proxies it to the API — no separate API
@@ -135,11 +135,15 @@ Create a project at sentry.io (one "Python/Flask" + one "React"), then:
 
 Both stay disabled when their DSN is blank, so dev/tests never report.
 
-## 6. Dodo Payments (when ready)
+## 6. Paystack (when ready)
 
-Add `DODO_API_KEY`, `DODO_WEBHOOK_SECRET` and the `DODO_PRODUCT_*` ids to
-`backend/.env`, then `docker compose up -d`. Point the Dodo webhook at
-`https://invoiceparsed.com/api/billing/webhook`. Until then, billing stays in
+Create one recurring monthly **plan** per paid tier in the Paystack dashboard
+(Starter / Pro / Business), then add `PAYSTACK_SECRET_KEY` and the three
+`PAYSTACK_PLAN_*` codes to `backend/.env` and `docker compose up -d`.
+
+In Paystack → Settings → API Keys & Webhooks, set the **webhook URL** to
+`https://invoiceparsed.com/api/billing/webhook`. Paystack signs it with your
+secret key, so there is nothing else to configure. Until then, billing stays in
 instant-switch demo mode.
 
 ---

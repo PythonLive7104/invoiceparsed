@@ -71,11 +71,15 @@ class Config:
     SENTRY_ENVIRONMENT = os.getenv("SENTRY_ENVIRONMENT", "production")
     SENTRY_TRACES_SAMPLE_RATE = float(os.getenv("SENTRY_TRACES_SAMPLE_RATE", "0.0"))
 
-    # Dodo Payments. Leave DODO_API_KEY blank to run billing in demo mode (plan
+    # Paystack. Leave PAYSTACK_SECRET_KEY blank to run billing in demo mode (plan
     # changes apply instantly, no real payment). Set all values for production.
-    DODO_API_KEY = os.getenv("DODO_API_KEY", "")
-    DODO_API_BASE = os.getenv("DODO_API_BASE", "https://test.dodopayments.com")
-    DODO_WEBHOOK_SECRET = os.getenv("DODO_WEBHOOK_SECRET", "")
+    # The same secret key signs webhooks (HMAC-SHA512), so there is no separate
+    # webhook secret. Use the sk_test_… key against test mode.
+    PAYSTACK_SECRET_KEY = os.getenv("PAYSTACK_SECRET_KEY", "")
+    PAYSTACK_PUBLIC_KEY = os.getenv("PAYSTACK_PUBLIC_KEY", "")
+    PAYSTACK_API_BASE = os.getenv("PAYSTACK_API_BASE", "https://api.paystack.co")
+    # Must match the currency of the plans created in the Paystack dashboard.
+    PAYSTACK_CURRENCY = os.getenv("PAYSTACK_CURRENCY", "USD")
 
     # Uploads
     MAX_CONTENT_LENGTH = 64 * 1024 * 1024  # request body cap (allows several pages)

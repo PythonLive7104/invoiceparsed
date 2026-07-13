@@ -124,7 +124,7 @@ class ApiKey(db.Model):
 
 
 class Payment(db.Model):
-    """A payment/subscription event received from Dodo Payments.
+    """A payment/subscription event received from Paystack.
 
     Recorded by the billing webhook so the user can see a history of charges and
     confirm a payment landed — independent of whether it triggered a plan change.
@@ -135,13 +135,14 @@ class Payment(db.Model):
     user_id = db.Column(db.String, db.ForeignKey("users.id"), nullable=False, index=True)
     # Plan this payment was for (from checkout metadata), when known.
     plan = db.Column(db.String(20), nullable=True)
-    # Amount in the smallest currency unit (cents), as Dodo reports it.
+    # Amount in the smallest currency unit (cents/kobo), as Paystack reports it.
     amount = db.Column(db.Integer, nullable=True)
     currency = db.Column(db.String(10), nullable=True)
-    # Dodo's status string (e.g. "succeeded") and the webhook event that produced it.
+    # Paystack's status string (e.g. "success") and the webhook event that produced it.
     status = db.Column(db.String(40), nullable=True)
     event_type = db.Column(db.String(60), nullable=True)
-    # Dodo identifiers, for cross-referencing in their dashboard.
+    # Paystack identifiers (transaction reference, subscription code), for
+    # cross-referencing in their dashboard.
     provider_payment_id = db.Column(db.String(120), nullable=True, index=True)
     provider_subscription_id = db.Column(db.String(120), nullable=True, index=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
@@ -150,7 +151,7 @@ class Payment(db.Model):
         return {
             "id": self.id,
             "plan": self.plan,
-            # Dodo reports amounts in cents; expose major units for display.
+            # Paystack reports amounts in cents/kobo; expose major units for display.
             "amount": (self.amount / 100) if self.amount is not None else None,
             "currency": self.currency,
             "status": self.status,

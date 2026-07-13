@@ -2,14 +2,16 @@ import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { CheckCircle2, XCircle, Loader2, Clock } from "lucide-react";
 import { Button } from "@/components/ui/Button";
+import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth.jsx";
 import { PLANS } from "@/lib/plans";
 
-// Dodo appends a `status` query param on redirect. Map the values we know.
-const FAILURE = new Set(["failed", "cancelled", "canceled", "declined", "expired"]);
-const SUCCESS = new Set(["active", "succeeded", "paid", "completed", "complete", "success"]);
+// Paystack transaction statuses, from the server-side verify.
+const FAILURE = new Set(["failed", "abandoned", "reversed", "cancelled"]);
+const SUCCESS = new Set(["success", "succeeded"]);
 
-// How long to wait for the webhook to flip the plan before showing "processing".
+// If verify can't confirm it (a pending charge, or Paystack unreachable), fall back
+// to watching for the webhook to flip the plan before showing "processing".
 const POLL_ATTEMPTS = 8;
 const POLL_INTERVAL = 2000;
 
@@ -17,52 +19,79 @@ export default function CheckoutReturn() {
   const { user, refreshUsage } = useAuth();
   const [params] = useSearchParams();
   const intendedPlan = params.get("plan");
-  const dodoStatus = (params.get("status") || "").toLowerCase();
+  // Paystack appends both on the callback; they hold the same value.
+  const reference = params.get("reference") || params.get("trxref");
 
   // checking | success | failed | processing
-  const [state, setState] = useState(FAILURE.has(dodoStatus) ? "failed" : "checking");
+  const [state, setState] = useState("checking");
   const startedRef = useRef(false);
 
   useEffect(() => {
-    if (state !== "checking" || startedRef.current) return;
+    if (startedRef.current) return;
     startedRef.current = true;
 
-    let attempts = 0;
     let cancelled = false;
-
     const planActivated = (u) =>
       intendedPlan ? u?.plan === intendedPlan : u?.plan && u.plan !== "free";
 
-    async function poll() {
+    // Ask the server to verify the reference with Paystack. This is authoritative and
+    // activates the plan on the spot, so we don't have to race the webhook.
+    async function verify() {
+      if (!reference) return null;
+      try {
+        const { data } = await api.post("/api/billing/verify", { reference });
+        return data?.status ?? null;
+      } catch {
+        return null; // fall through to polling
+      }
+    }
+
+    // Fallback: the webhook may still be in flight. Watch for the plan to flip.
+    async function poll(attempt = 0) {
       if (cancelled) return;
-      await refreshUsage();
-      attempts += 1;
-      // refreshUsage updates context async; re-read via the effect dependency on `user`.
-      if (attempts >= POLL_ATTEMPTS) {
-        // Payment likely went through (Dodo redirected us here) but the webhook
-        // hasn't landed yet — don't claim failure.
-        if (!cancelled) setState((s) => (s === "checking" ? "processing" : s));
+      const refreshed = await refreshUsage();
+      if (cancelled) return;
+      if (planActivated(refreshed)) {
+        setState("success");
         return;
       }
-      setTimeout(poll, POLL_INTERVAL);
+      if (attempt + 1 >= POLL_ATTEMPTS) {
+        // The charge most likely went through (Paystack redirected us here) but
+        // nothing has confirmed it yet — don't claim failure.
+        setState("processing");
+        return;
+      }
+      setTimeout(() => poll(attempt + 1), POLL_INTERVAL);
     }
-    poll();
+
+    (async () => {
+      const status = await verify();
+      if (cancelled) return;
+      if (status && FAILURE.has(status)) {
+        setState("failed");
+        return;
+      }
+      if (status && SUCCESS.has(status)) {
+        await refreshUsage().catch(() => {});
+        if (!cancelled) setState("success");
+        return;
+      }
+      poll();
+    })();
 
     return () => {
       cancelled = true;
     };
-  }, [state, intendedPlan, refreshUsage]);
+  }, [reference, intendedPlan, refreshUsage]);
 
-  // Whenever the user (plan) updates, check if activation completed.
+  // The auth context may confirm the plan independently of our polling.
   useEffect(() => {
     if (state !== "checking") return;
-    const activated = intendedPlan ? user?.plan === intendedPlan : user?.plan && user.plan !== "free";
-    if (activated || SUCCESS.has(dodoStatus)) {
-      // If Dodo says success but the plan hasn't flipped yet, still prefer the
-      // confirmed plan; treat as success once either signals it.
-      if (activated) setState("success");
-    }
-  }, [user, state, intendedPlan, dodoStatus]);
+    const activated = intendedPlan
+      ? user?.plan === intendedPlan
+      : user?.plan && user.plan !== "free";
+    if (activated) setState("success");
+  }, [user, state, intendedPlan]);
 
   const planName = PLANS[intendedPlan]?.name || (intendedPlan ?? "your");
 

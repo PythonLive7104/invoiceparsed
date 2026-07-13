@@ -20,7 +20,7 @@ class TestConfig(Config):
     JWT_SECRET = "test-secret-key"
     OPENAI_API_KEY = "test-openai-key"
     RESEND_API_KEY = ""  # _send() short-circuits when empty
-    DODO_API_KEY = ""
+    PAYSTACK_SECRET_KEY = ""
     APP_URL = "http://localhost:5173"
     FRONTEND_ORIGIN = "http://localhost:5173"
 
@@ -39,9 +39,10 @@ def app(tmp_path, monkeypatch):
 
     # Keep tests hermetic regardless of the developer's .env: billing reads the
     # module-level Config, so default it to demo mode (specific billing tests
-    # override these).
-    monkeypatch.setattr("config.Config.DODO_API_KEY", "", raising=False)
-    monkeypatch.setattr("config.Config.DODO_WEBHOOK_SECRET", "", raising=False)
+    # override this). The plan codes come from os.getenv, so clear them too.
+    monkeypatch.setattr("config.Config.PAYSTACK_SECRET_KEY", "", raising=False)
+    for env_key in ("PAYSTACK_PLAN_STARTER", "PAYSTACK_PLAN_PRO", "PAYSTACK_PLAN_BUSINESS"):
+        monkeypatch.delenv(env_key, raising=False)
 
     from app import create_app
     from extensions import db
