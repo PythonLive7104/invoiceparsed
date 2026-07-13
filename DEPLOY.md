@@ -137,9 +137,10 @@ Both stay disabled when their DSN is blank, so dev/tests never report.
 
 ## 6. Paystack (when ready)
 
-Create one recurring monthly **plan** per paid tier in the Paystack dashboard
-(Starter / Pro / Business), then add `PAYSTACK_SECRET_KEY` and the three
-`PAYSTACK_PLAN_*` codes to `backend/.env` and `docker compose up -d`.
+Add `PAYSTACK_SECRET_KEY` to `backend/.env` and `docker compose up -d`. The
+recurring monthly plans (Starter / Pro / Business) are created in your Paystack
+account automatically, from the prices in `backend/plans.py`, the first time each
+tier is bought — there is nothing to set up in the dashboard.
 
 In Paystack → Settings → API Keys & Webhooks, set the **webhook URL** to
 `https://invoiceparsed.com/api/billing/webhook`. Paystack signs it with your

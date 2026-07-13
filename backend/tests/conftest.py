@@ -44,6 +44,11 @@ def app(tmp_path, monkeypatch):
     for env_key in ("PAYSTACK_PLAN_STARTER", "PAYSTACK_PLAN_PRO", "PAYSTACK_PLAN_BUSINESS"):
         monkeypatch.delenv(env_key, raising=False)
 
+    # Plan codes are provisioned lazily and cached in the module; don't let one
+    # test's plans leak into the next.
+    import billing
+    billing.reset_plan_cache()
+
     from app import create_app
     from extensions import db
 

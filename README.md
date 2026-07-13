@@ -261,9 +261,10 @@ and stub all external services — nothing leaves the machine.
   gunicorn -c gunicorn.conf.py wsgi:app
   ```
   Serve the frontend as a static build (`npm run build` → deploy `frontend/dist`).
-- **Payments (Paystack):** set `PAYSTACK_SECRET_KEY` and the `PAYSTACK_PLAN_*`
-  codes (one recurring plan per paid tier, created in the Paystack dashboard).
-  The billing UI then opens a hosted Paystack checkout via
+- **Payments (Paystack):** set `PAYSTACK_SECRET_KEY` — that's it. The recurring
+  monthly plans are provisioned in Paystack automatically from `plans.py` the first
+  time each tier is bought (`PAYSTACK_PLAN_*` exist only to pin a tier to a
+  hand-made plan). The billing UI opens a hosted Paystack checkout via
   `POST /api/billing/checkout`. The plan is applied twice over, idempotently:
   `POST /api/billing/verify` confirms the transaction reference the browser
   returns with, and `POST /api/billing/webhook` (HMAC-SHA512 signature-verified

@@ -33,7 +33,7 @@ def test_billing_config_reports_demo(client):
 
 def test_create_checkout_calls_paystack(app, monkeypatch):
     monkeypatch.setattr(billing.Config, "PAYSTACK_SECRET_KEY", SECRET)
-    monkeypatch.setenv("PAYSTACK_PLAN_PRO", "PLN_pro123")
+    monkeypatch.setenv("PAYSTACK_PLAN_PRO", "PLN_pro123")  # pinned: no provisioning
     user = make_user(app, plan="free")
 
     captured = {}
@@ -66,6 +66,102 @@ def test_create_checkout_calls_paystack(app, monkeypatch):
     assert captured["json"]["email"] == user["email"]
     assert captured["json"]["amount"] == 4900  # $49 in cents
     assert captured["json"]["metadata"] == {"user_id": user["id"], "plan": "pro"}
+
+
+# ─── Plan provisioning ───────────────────────────────────────────────────────
+def _fake_paystack_plans(monkeypatch, existing, *, created=None):
+    """Stub Paystack's /plan list + create. `created` collects the create payloads."""
+    monkeypatch.setattr(billing.Config, "PAYSTACK_SECRET_KEY", SECRET)
+    calls = {"list": 0}
+
+    def fake_get(path, *, allow_missing=False):
+        assert path.startswith("/plan")
+        calls["list"] += 1
+        return list(existing)
+
+    def fake_post(path, payload):
+        assert path == "/plan"
+        if created is not None:
+            created.append(payload)
+        code = f"PLN_new_{len(existing)}"
+        existing.append({**payload, "plan_code": code})
+        return {"plan_code": code}
+
+    monkeypatch.setattr(billing, "_api_get", fake_get)
+    monkeypatch.setattr(billing, "_api_post", fake_post)
+    return calls
+
+
+def _remote_plan(name, amount, code, currency="USD", interval="monthly"):
+    return {"name": name, "amount": amount, "currency": currency,
+            "interval": interval, "plan_code": code}
+
+
+def test_plan_code_reuses_the_existing_paystack_plan(monkeypatch):
+    existing = [_remote_plan("InvoiceParsed Pro", 4900, "PLN_pro_live")]
+    created = []
+    calls = _fake_paystack_plans(monkeypatch, existing, created=created)
+
+    assert billing.plan_code_for("pro") == "PLN_pro_live"
+    assert created == []  # matched by name+amount+currency+interval; nothing created
+
+    # Cached: a second lookup doesn't hit the API again.
+    assert billing.plan_code_for("pro") == "PLN_pro_live"
+    assert calls["list"] == 1
+
+
+def test_plan_code_provisions_a_missing_plan(monkeypatch):
+    created = []
+    _fake_paystack_plans(monkeypatch, [], created=created)
+
+    code = billing.plan_code_for("starter")
+    assert code.startswith("PLN_")
+    assert created == [{
+        "name": "InvoiceParsed Starter",
+        "amount": 1900,  # $19 from plans.py
+        "interval": "monthly",
+        "currency": "USD",
+        "description": billing.get_plan("starter")["tagline"],
+    }]
+    # And it round-trips, so a subscription.* webhook can map the code back.
+    assert billing.plan_for_code(code) == "starter"
+
+
+def test_plan_code_provisions_a_new_plan_when_the_price_changed(monkeypatch):
+    # A plan exists under our name but at the old price — don't sell at the old price.
+    existing = [_remote_plan("InvoiceParsed Business", 8900, "PLN_biz_old")]
+    created = []
+    _fake_paystack_plans(monkeypatch, existing, created=created)
+
+    code = billing.plan_code_for("business")
+    assert code != "PLN_biz_old"
+    assert created[0]["amount"] == 9900  # the current $99
+    # Existing subscribers on the old plan still resolve to the Business tier.
+    assert billing.plan_for_code("PLN_biz_old") == "business"
+
+
+def test_plan_for_code_ignores_unrelated_plans(monkeypatch):
+    _fake_paystack_plans(monkeypatch, [_remote_plan("Some Other Product", 500, "PLN_other")])
+    assert billing.plan_for_code("PLN_other") is None
+    assert billing.plan_for_code("PLN_nonexistent") is None
+
+
+def test_checkout_reports_a_provisioning_failure(client, app, monkeypatch):
+    monkeypatch.setattr(billing.Config, "PAYSTACK_SECRET_KEY", SECRET)
+
+    def boom(path, *, allow_missing=False):
+        raise billing.BillingError("Could not reach Paystack: timed out")
+
+    monkeypatch.setattr(billing, "_api_get", boom)
+    user = make_user(app, plan="free")
+
+    r = client.post("/api/billing/checkout", json={"plan": "pro"}, headers=auth_header(app, user))
+    assert r.status_code == 502
+    assert "Paystack" in r.get_json()["error"]
+
+    from models import User
+    with app.app_context():
+        assert User.query.get(user["id"]).plan == "free"  # not upgraded for free
 
 
 # ─── Webhook signature verification ──────────────────────────────────────────

@@ -9,6 +9,11 @@ Three halves:
   - verify_webhook(): validate an incoming Paystack webhook (HMAC-SHA512 of the
     raw body, keyed with the secret key), then the caller applies the plan change.
 
+Recurring billing needs a Paystack *plan* (a PLN_ code) per paid tier: passing one
+to /transaction/initialize is what makes Paystack store the card and re-charge it
+monthly. Rather than have you create those by hand and paste the codes into .env,
+plan_code_for() provisions them on first use from plans.py — see "Plan provisioning".
+
 Everything is gated behind configuration: if PAYSTACK_SECRET_KEY isn't set the app
 runs in "demo mode" and plan changes are applied instantly without real payment
 (see routes/billing_routes.py). This keeps local dev and the demo working unchanged.
@@ -16,7 +21,9 @@ runs in "demo mode" and plan changes are applied instantly without real payment
 import hashlib
 import hmac
 import json
+import logging
 import os
+import threading
 from datetime import datetime
 from urllib.parse import quote
 
@@ -25,7 +32,14 @@ import httpx
 from config import Config
 from plans import PLANS, get_plan
 
-# Maps our internal plan id → the env var holding the configured Paystack plan code.
+logger = logging.getLogger(__name__)
+
+# The tiers that get charged for, and therefore need a Paystack plan.
+PAID_PLANS = tuple(pid for pid, p in PLANS.items() if p["price"] > 0)
+
+# Optional escape hatch: set one of these to pin a tier to an existing Paystack plan
+# code (e.g. one created by hand in the dashboard) instead of letting the app
+# provision it. Left blank — the normal case — the plan is created on first use.
 _PLAN_ENV = {
     "starter": "PAYSTACK_PLAN_STARTER",
     "pro": "PAYSTACK_PLAN_PRO",
@@ -43,25 +57,6 @@ SUCCESS_STATUSES = {"success", "succeeded"}
 
 def is_configured() -> bool:
     return bool(Config.PAYSTACK_SECRET_KEY)
-
-
-def plan_code_for(plan: str) -> str | None:
-    """The Paystack plan code (PLN_…) configured for one of our plan ids."""
-    env_key = _PLAN_ENV.get(plan)
-    return os.getenv(env_key) if env_key else None
-
-
-def plan_for_code(code: str | None) -> str | None:
-    """Reverse of plan_code_for: our plan id for a Paystack plan code.
-
-    Needed because subscription.* webhooks carry the plan code but no metadata.
-    """
-    if not code:
-        return None
-    for plan_id in _PLAN_ENV:
-        if plan_code_for(plan_id) == code:
-            return plan_id
-    return None
 
 
 class BillingError(Exception):
@@ -88,45 +83,6 @@ def _unwrap(resp) -> dict:
     return body.get("data") or {}
 
 
-def create_checkout(user, plan: str, return_url: str) -> str:
-    """Initialize a Paystack transaction and return the hosted checkout URL.
-
-    Passing `plan` makes Paystack create a subscription once the charge succeeds,
-    and the plan's own amount/currency take precedence over the `amount` we send.
-    We attach the user id and target plan as metadata so both the callback and the
-    webhook can apply the change to the right account.
-    """
-    if not is_configured():
-        raise BillingError("Paystack is not configured.")
-    plan_code = plan_code_for(plan)
-    if not plan_code:
-        raise BillingError(f"No Paystack plan configured for the {plan} plan.")
-
-    payload = {
-        "email": user.email,
-        # Paystack takes the smallest currency unit (cents / kobo).
-        "amount": int(get_plan(plan)["price"]) * 100,
-        "currency": Config.PAYSTACK_CURRENCY,
-        "plan": plan_code,
-        "callback_url": return_url,
-        "metadata": {"user_id": user.id, "plan": plan},
-    }
-    try:
-        resp = httpx.post(
-            f"{Config.PAYSTACK_API_BASE.rstrip('/')}/transaction/initialize",
-            headers=_headers(),
-            json=payload,
-            timeout=15,
-        )
-    except Exception as exc:  # noqa: BLE001
-        raise BillingError(f"Could not reach Paystack: {exc}") from exc
-
-    url = _unwrap(resp).get("authorization_url")
-    if not url:
-        raise BillingError("Paystack did not return a checkout URL.")
-    return url
-
-
 def _api_get(path: str, *, allow_missing: bool = False) -> dict | None:
     """GET a Paystack path with auth, returning the unwrapped `data` object.
 
@@ -144,6 +100,177 @@ def _api_get(path: str, *, allow_missing: bool = False) -> dict | None:
     if allow_missing and resp.status_code == 404:
         return None
     return _unwrap(resp)
+
+
+def _api_post(path: str, payload: dict) -> dict:
+    """POST to a Paystack path with auth, returning the unwrapped `data` object."""
+    try:
+        resp = httpx.post(
+            f"{Config.PAYSTACK_API_BASE.rstrip('/')}{path}",
+            headers=_headers(),
+            json=payload,
+            timeout=15,
+        )
+    except Exception as exc:  # noqa: BLE001
+        raise BillingError(f"Could not reach Paystack: {exc}") from exc
+    return _unwrap(resp)
+
+
+# ─── Plan provisioning ───────────────────────────────────────────────────────
+# plans.py is the source of truth. On first use we list the plans on the Paystack
+# account, match ours by name, and create any that are missing or whose price has
+# since changed. Existing subscribers keep billing against the plan they signed up
+# on (Paystack won't reprice a live subscription), which is why _codes maps every
+# plan code we've ever used back to its tier, not just the current one.
+_lock = threading.RLock()
+_codes: dict[str, str] = {}        # PLN_ code → our plan id (incl. superseded plans)
+_current: dict[str, str] = {}      # our plan id → the PLN_ code new checkouts use
+_unresolvable: set[str] = set()    # codes we've already failed to map; don't re-fetch
+_loaded = False
+
+
+def reset_plan_cache() -> None:
+    """Drop the cached plan codes (tests; also lets a process pick up dashboard edits)."""
+    global _loaded
+    with _lock:
+        _codes.clear()
+        _current.clear()
+        _unresolvable.clear()
+        _loaded = False
+
+
+def _pinned_code(plan_id: str) -> str:
+    env_key = _PLAN_ENV.get(plan_id)
+    return (os.getenv(env_key) or "").strip() if env_key else ""
+
+
+def _plan_name(plan_id: str) -> str:
+    return f"{Config.PAYSTACK_PLAN_PREFIX} {get_plan(plan_id)['name']}".strip()
+
+
+def _amount_for(plan_id: str) -> int:
+    # Paystack takes the smallest currency unit (cents / kobo).
+    return int(get_plan(plan_id)["price"]) * 100
+
+
+def _is_current(remote: dict, plan_id: str) -> bool:
+    """Does this Paystack plan still match what plans.py says the tier costs?"""
+    return (
+        remote.get("amount") == _amount_for(plan_id)
+        and (remote.get("currency") or "").upper() == Config.PAYSTACK_CURRENCY.upper()
+        and remote.get("interval") == "monthly"
+    )
+
+
+def _load_plans() -> None:
+    """Index the Paystack account's plans by name. Caller holds _lock."""
+    global _loaded
+    by_name = {_plan_name(pid).lower(): pid for pid in PAID_PLANS}
+    for remote in _api_get("/plan?perPage=100") or []:
+        plan_id = by_name.get((remote.get("name") or "").strip().lower())
+        code = remote.get("plan_code")
+        if not plan_id or not code:
+            continue  # someone else's plan on this account
+        _codes[code] = plan_id
+        if _is_current(remote, plan_id):
+            _current[plan_id] = code
+    _loaded = True
+
+
+def plan_code_for(plan_id: str) -> str | None:
+    """The Paystack plan code new checkouts for this tier should use.
+
+    Creates the plan in Paystack the first time a tier is bought (or the first time
+    after its price changed in plans.py). Raises BillingError if Paystack is
+    unreachable — the caller turns that into a failed checkout.
+    """
+    if plan_id not in PAID_PLANS:
+        return None
+    pinned = _pinned_code(plan_id)
+    if pinned:
+        return pinned
+
+    with _lock:
+        if not _loaded:
+            _load_plans()
+        if plan_id in _current:
+            return _current[plan_id]
+
+        data = _api_post("/plan", {
+            "name": _plan_name(plan_id),
+            "amount": _amount_for(plan_id),
+            "interval": "monthly",
+            "currency": Config.PAYSTACK_CURRENCY,
+            "description": get_plan(plan_id)["tagline"],
+        })
+        code = data.get("plan_code")
+        if not code:
+            raise BillingError(f"Paystack did not return a plan code for {plan_id}.")
+        logger.info(
+            "Provisioned Paystack plan %s (%s %s/month) → %s",
+            _plan_name(plan_id), Config.PAYSTACK_CURRENCY, get_plan(plan_id)["price"], code,
+        )
+        _codes[code] = plan_id
+        _current[plan_id] = code
+        return code
+
+
+def plan_for_code(code: str | None) -> str | None:
+    """Reverse of plan_code_for: our plan id for a Paystack plan code.
+
+    Needed because subscription.* webhooks carry the plan code but no metadata.
+    Resolves superseded plans too, so a subscriber still on last year's price maps
+    to the right tier. Never raises — an unmappable code just yields None.
+    """
+    if not code:
+        return None
+    for plan_id in PAID_PLANS:
+        if _pinned_code(plan_id) == code:
+            return plan_id
+
+    with _lock:
+        if code in _codes:
+            return _codes[code]
+        if code in _unresolvable:
+            return None
+        # Unknown: it may be a plan another worker provisioned after we last looked.
+        try:
+            _load_plans()
+        except BillingError as exc:
+            logger.warning("Could not list Paystack plans to resolve %s: %s", code, exc)
+            return None
+        if code in _codes:
+            return _codes[code]
+        _unresolvable.add(code)
+        return None
+
+
+def create_checkout(user, plan: str, return_url: str) -> str:
+    """Initialize a Paystack transaction and return the hosted checkout URL.
+
+    Passing `plan` makes Paystack create a subscription once the charge succeeds,
+    and the plan's own amount/currency take precedence over the `amount` we send.
+    We attach the user id and target plan as metadata so both the callback and the
+    webhook can apply the change to the right account.
+    """
+    if not is_configured():
+        raise BillingError("Paystack is not configured.")
+    plan_code = plan_code_for(plan)
+    if not plan_code:
+        raise BillingError(f"{plan} is not a paid plan.")
+
+    data = _api_post("/transaction/initialize", {
+        "email": user.email,
+        "amount": _amount_for(plan),
+        "currency": Config.PAYSTACK_CURRENCY,
+        "plan": plan_code,
+        "callback_url": return_url,
+        "metadata": {"user_id": user.id, "plan": plan},
+    })
+    url = data.get("authorization_url")
+    if not url:
+        raise BillingError("Paystack did not return a checkout URL.")
+    return url
 
 
 def verify_transaction(reference: str) -> dict:

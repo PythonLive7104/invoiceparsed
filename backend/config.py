@@ -78,8 +78,13 @@ class Config:
     PAYSTACK_SECRET_KEY = os.getenv("PAYSTACK_SECRET_KEY", "")
     PAYSTACK_PUBLIC_KEY = os.getenv("PAYSTACK_PUBLIC_KEY", "")
     PAYSTACK_API_BASE = os.getenv("PAYSTACK_API_BASE", "https://api.paystack.co")
-    # Must match the currency of the plans created in the Paystack dashboard.
+    # Currency the subscription plans are billed in. Changing this after plans have
+    # been provisioned makes the app provision a fresh set in the new currency.
     PAYSTACK_CURRENCY = os.getenv("PAYSTACK_CURRENCY", "USD")
+    # Paystack plans are named "<prefix> <plan name>" (e.g. "InvoiceParsed Pro") —
+    # this is what the customer sees on the checkout page and their card statement
+    # reference. It also identifies our plans on a shared Paystack account.
+    PAYSTACK_PLAN_PREFIX = os.getenv("PAYSTACK_PLAN_PREFIX", "InvoiceParsed")
 
     # Uploads
     MAX_CONTENT_LENGTH = 64 * 1024 * 1024  # request body cap (allows several pages)
