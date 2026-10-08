@@ -19,16 +19,36 @@ class Config:
     ADMIN_USER = os.getenv("ADMIN_USER", "")
     ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "")
 
-    # Database — prefer the Supabase Postgres pooler if set, else DATABASE_URL,
-    # else local SQLite. SQLAlchemy needs the "postgresql://" scheme (Supabase
-    # may hand out "postgres://"), so normalise it.
-    _db_url = os.getenv("SUPABASE_URL") or os.getenv("DATABASE_URL", "sqlite:///invoiceparsed.db")
+    # Database — DATABASE_URL wins. In the Docker deploy that's the bundled
+    # Postgres container (see docker-compose.yml), which is the default setup.
+    # SUPABASE_URL is kept as a fallback so an existing managed-Postgres install
+    # keeps working untouched; set DATABASE_URL to move off it. Falls back to
+    # local SQLite for host-only dev. SQLAlchemy needs the "postgresql://"
+    # scheme (Supabase and some providers hand out "postgres://"), so normalise.
+    _db_url = (
+        os.getenv("DATABASE_URL")
+        or os.getenv("SUPABASE_URL")
+        or "sqlite:///invoiceparsed.db"
+    )
+    # Postgres URL hygiene, applied to whatever form was supplied:
+    #   1. Some providers hand out "postgres://"; SQLAlchemy wants "postgresql://".
+    #   2. Pin the DBAPI to psycopg2 — the driver requirements.txt installs.
+    #      SQLAlchemy 2.1 changed the default for a driver-less "postgresql://"
+    #      from psycopg2 to psycopg (v3), which isn't installed, so without this
+    #      the app dies at startup on "No module named 'psycopg'".
+    # A URL that names its own driver (postgresql+psycopg://, +asyncpg, …) is
+    # left alone.
     if _db_url.startswith("postgres://"):
-        _db_url = _db_url.replace("postgres://", "postgresql://", 1)
+        _db_url = "postgresql://" + _db_url[len("postgres://"):]
+    if _db_url.startswith("postgresql://"):
+        _db_url = "postgresql+psycopg2://" + _db_url[len("postgresql://"):]
     SQLALCHEMY_DATABASE_URI = _db_url
     SQLALCHEMY_TRACK_MODIFICATIONS = False
-    # pgBouncer (Supabase pooler, port 6543) is transaction-mode; pre-ping avoids
-    # handing out dead connections, and we don't keep our own large pool.
+    # pre-ping checks a pooled connection before handing it out, so the app
+    # recovers on its own when the database restarts (a `docker compose up -d db`
+    # or a nightly backup hiccup) instead of serving one round of 500s. Also what
+    # makes a transaction-mode pooler (pgBouncer / the Supabase pooler on 6543)
+    # usable. Cheap: one round-trip per checkout, and we keep no large pool.
     SQLALCHEMY_ENGINE_OPTIONS = {"pool_pre_ping": True}
 
     # OpenAI

@@ -43,7 +43,7 @@ Edit `backend/.env`:
 OPENAI_API_KEY=sk-...                # ← your OpenAI key (required for extraction)
 OPENAI_MODEL=gpt-4o                  # any vision-capable model
 JWT_SECRET=<long-random-string>      # python -c "import secrets;print(secrets.token_urlsafe(48))"
-DATABASE_URL=sqlite:///invoiceparsed.db  # SQLite for dev; swap to Postgres for prod
+DATABASE_URL=postgresql://invoiceparsed:invoiceparsed@db:5432/invoiceparsed  # see below
 FRONTEND_ORIGIN=http://localhost:5173
 APP_URL=http://localhost:5173        # used to build links in emails
 GOOGLE_CLIENT_ID=                    # optional — enables Google sign-in
@@ -51,11 +51,32 @@ RESEND_API_KEY=                      # optional — enables password-reset email
 RESEND_FROM=InvoiceParsed <onboarding@resend.dev>
 ```
 
-The SQLite database and tables are created automatically on first run.
+### The database when running on your machine
 
-> **Upgrading an existing dev DB:** the auth additions changed the `users`
-> table (nullable password, `google_sub`, `image`). SQLite won't auto-migrate —
-> delete `backend/invoiceparsed.db` once so it's recreated with the new schema.
+The app's database is Postgres, running as the `db` service in
+`docker-compose.yml` (see [DB.md](DB.md)) — that's what the `DATABASE_URL` above
+points at, and in Docker `docker-compose.yml` sets it for the container anyway.
+
+`db` is a container hostname, though, so a Flask process running **directly on
+your machine** can't resolve it. Two ways to run the API locally:
+
+```bash
+# A) Use the containerised Postgres over a published port (real parity)
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d db
+# then in backend/.env:
+#   DATABASE_URL=postgresql://invoiceparsed:invoiceparsed@localhost:5432/invoiceparsed
+
+# B) Or skip Postgres entirely — SQLite needs no setup
+#   DATABASE_URL=sqlite:///invoiceparsed.db
+```
+
+Either way the tables are created automatically on first run. Note that
+`create_all()` adds missing *tables* but never alters existing ones, so a schema
+change to a table you already have needs a manual `ALTER TABLE` (or, in dev on
+SQLite, just delete `backend/invoiceparsed.db` and let it be recreated).
+
+> The test suite doesn't care which of these you pick: it builds its own app on a
+> temporary SQLite file, and `pytest` never touches your `DATABASE_URL`.
 
 ## 2. Frontend (React + Vite)
 
@@ -184,7 +205,7 @@ Flask API (:5000)
    ├── /api/usage         monthly usage vs plan limit
    └── /api/billing/upgrade   change plan (Paystack; demo stub when unconfigured)
         │
-        ├── SQLite (users, extractions)   via SQLAlchemy
+        ├── Postgres (users, extractions)  via SQLAlchemy — bundled `db` service
         └── OpenAI API                    via the openai SDK
 ```
 
@@ -336,10 +357,14 @@ and stub all external services — nothing leaves the machine.
 
 ## Going to production
 
-- **Secrets & DB:** set a strong `JWT_SECRET` and point the database at Postgres
-  (this project ships with `psycopg2-binary`; Supabase's pooler works — see
-  `SUPABASE_URL`). `create_all()` won't alter existing tables, so apply schema
-  changes with a migration/SQL when upgrading.
+- **Secrets:** set a strong `JWT_SECRET` in `backend/.env`.
+- **Database:** nothing to provision — Postgres runs as the `db` service in
+  `docker-compose.yml`, with a nightly backup into `./backups`. Copy the root env
+  template (`cp .env.example .env`) and set `POSTGRES_PASSWORD` before deploying.
+  It isn't published to the host, so only the other containers can reach it. See
+  [DB.md](DB.md) for backups, restores, inspecting it, and migrating in from a
+  managed Postgres. `create_all()` creates missing tables but won't alter
+  existing ones, so new *columns* need a manual `ALTER TABLE`.
 - **WSGI server:** serve Flask with gunicorn (config included):
   ```bash
   cd backend

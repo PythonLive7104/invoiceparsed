@@ -1,8 +1,9 @@
 # Deploying InvoiceParsed (Docker, single VPS)
 
 This deploys two containers — the Flask API (gunicorn) and an nginx that serves
-the React SPA and reverse-proxies `/api` to the API. The database (Supabase),
-OpenAI and Resend are external, so nothing else runs on the box.
+the React SPA and reverse-proxies `/api` to the API, plus Postgres (the app's
+own database), Redis and a nightly database backup. Only OpenAI and Resend are
+external — the database runs here, so there's nothing to provision.
 
 Tested target: a 2 GB / 1 vCPU / 40 GB KVM VPS (e.g. InterServer $3/mo).
 
@@ -38,8 +39,14 @@ usermod -aG docker $USER
 
 ```bash
 git clone <your-repo-url> invoiceparsed && cd invoiceparsed
+
+# App secrets (OpenAI, JWT, Paystack, Resend)
 cp backend/.env.example backend/.env
 nano backend/.env
+
+# Stack config (database password, TLS domain, frontend build args)
+cp .env.example .env
+nano .env                 # at minimum: set POSTGRES_PASSWORD
 ```
 
 Set these for production in `backend/.env`:
@@ -47,7 +54,7 @@ Set these for production in `backend/.env`:
 | Key | Value |
 |-----|-------|
 | `JWT_SECRET` | a long random string — `python3 -c "import secrets;print(secrets.token_urlsafe(48))"` |
-| `SUPABASE_URL` | your Supabase pooler connection string |
+| *(database)* | nothing to set — Postgres runs as the `db` service and `docker-compose.yml` wires it up. Set `POSTGRES_PASSWORD` in the **root** `.env` (`cp .env.example .env`). See [DB.md](DB.md). |
 | `OPENAI_API_KEY` | your OpenAI key |
 | `RESEND_API_KEY`, `RESEND_FROM` | Resend key + verified sender |
 | `APP_URL` | `https://invoiceparsed.com` (used in email links) |
@@ -100,8 +107,8 @@ Then `https://invoiceparsed.com` works, with HTTP auto-redirecting to HTTPS and
 `www` redirecting to the apex. Certificates are stored in the `caddy_data`
 volume and renew automatically — don't delete that volume.
 
-> Tip: persist these in a root `.env` (Compose reads it automatically), then just
-> run `docker compose up -d --build`:
+> Tip: persist these in the root `.env` (Compose reads it automatically — start
+> from `.env.example`), then just run `docker compose up -d --build`:
 > ```
 > COMPOSE_FILE=docker-compose.yml:docker-compose.prod.yml
 > SITE_DOMAIN=invoiceparsed.com
@@ -151,9 +158,14 @@ instant-switch demo mode.
 
 ## Notes / sizing
 
-- **Memory budget:** nginx (~30 MB) + gunicorn (2–3 gthread workers, ~400–700 MB)
-  fits well under 2 GB. Scale workers with `WEB_CONCURRENCY` in `backend/.env`.
-- **Persistence:** uploaded originals are kept in the `uploads` Docker volume.
+- **Memory budget:** Postgres (~150 MB) + nginx (~30 MB) + Redis (~5–10 MB) +
+  gunicorn (2–3 gthread workers, ~400–700 MB) fits under 2 GB. Scale workers with
+  `WEB_CONCURRENCY` in `backend/.env`; Postgres is tuned for a 2 GB box
+  (`shared_buffers=128MB`) in `docker-compose.yml`.
+- **Persistence:** the database is in the `pgdata` volume and uploaded originals
+  in `uploads`. Both survive `docker compose down`; `down -v` deletes them.
+  Nightly database dumps land in `./backups` — copy them off-box (see
+  [DB.md](DB.md)).
 - **Rate limiting** uses a bundled **Redis** container, so limits are shared and
   exact across all gunicorn workers (`RATELIMIT_STORAGE_URI=redis://redis:6379/0`,
   set in compose). Redis is configured ephemeral (no disk persistence) since it

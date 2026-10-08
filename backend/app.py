@@ -110,8 +110,15 @@ def create_app(config_class=Config) -> Flask:
     return app
 
 
-app = create_app()
-
-
 if __name__ == "__main__":
-    app.run(host="127.0.0.1", port=5000, debug=True)
+    create_app().run(host="127.0.0.1", port=5000, debug=True)
+
+# NOTE: no module-level `app = create_app()`. create_app() connects to the
+# database (create_all), so building one at import time would mean that merely
+# importing this module — as the test suite and any tooling does — connects to
+# whatever DATABASE_URL happens to point at. With the database now running as a
+# container ("db"), that import would fail on the host and take the whole test
+# suite with it. The real entrypoints each build their own:
+#   • gunicorn / production → wsgi.py calls create_app()
+#   • python app.py         → the __main__ block above
+#   • flask --app app run   → the Flask CLI discovers the create_app factory

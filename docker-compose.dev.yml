@@ -1,0 +1,15 @@
+# Dev override: publish the database port so you can run the API (or psql, or a
+# GUI client) directly on your machine against the containerised Postgres.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d db
+#
+# Then point backend/.env at localhost:
+#   DATABASE_URL=postgresql://invoiceparsed:invoiceparsed@localhost:5432/invoiceparsed
+#
+# Bound to 127.0.0.1, so it is reachable from this machine only and never from
+# the network. Don't apply this file on a public server.
+
+services:
+  db:
+    ports:
+      - "127.0.0.1:5432:5432"
