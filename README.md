@@ -92,6 +92,76 @@ Open **http://localhost:5173** and sign up.
 
 ---
 
+## Turning on analytics
+
+Nothing is tracked until you set a key, and with none set the build ships no
+third-party requests. Pick either provider (or both) in `frontend/.env`:
+
+```env
+VITE_PLAUSIBLE_DOMAIN=invoiceparsed.com   # your site as registered at plausible.io
+VITE_POSTHOG_KEY=                         # optional, instead of or alongside
+VITE_ANALYTICS_DEBUG=false                # true → log events to the console, send nothing
+```
+
+> **Vite bakes `VITE_*` at build time.** In the Docker deploy these are build
+> args, so put them in the **root** `.env` and `docker compose up -d --build` —
+> a plain restart won't pick them up.
+
+The funnel is already instrumented end to end, so the questions you actually
+need answered are answerable on day one:
+
+| Step | Event |
+| ---- | ----- |
+| Landed | `pageview` (one per SPA route change) |
+| Tried the extractor without an account | `demo_started` → `demo_completed` |
+| Hit the export gate on a demo result | `demo_export_blocked` |
+| Created an account | `signup_submitted` → `signup_verified` |
+| Kept the demo result | `demo_claimed` |
+| Used the product | `extract_started` → `extract_completed` |
+| Started paying | `checkout_started` → `payment_succeeded` |
+
+## The try-before-signup demo
+
+The landing page lets a stranger extract one real document with **no account** —
+the biggest single lever on signup conversion, since the old flow demanded an
+email and a confirmed inbox before showing anything.
+
+How it's kept from being abused or expensive:
+
+- **One per visitor, server-side.** `DEMO_FREE_EXTRACTIONS` (default 1) is capped
+  per IP in the `demo_usage` table, keyed by a *salted hash* of the address — the
+  IP itself is never stored. The counter is durable: restarting the app or purging
+  old results does not hand anyone a fresh freebie.
+- **The attempt is counted before the model call**, so a failed-but-paid-for
+  extraction can't be retried in a loop.
+- **One file, invoices and receipts only.** Bank statements are the costliest and
+  slowest document type, so they stay behind a paid plan. Batch and multi-page
+  stay paid capabilities too.
+- **A burst limit** (`RATELIMIT_DEMO`, default `6 per hour`) sits on top of the cap.
+- **Nothing lands in anyone's account.** A demo creates no `Extraction` row, so no
+  quota is spent and nothing can leak into a stranger's history.
+- **Results expire.** Unclaimed results and their uploaded files are purged after
+  `DEMO_RETENTION_HOURS` (default 24), opportunistically on demo requests — no
+  scheduler to run.
+
+Set `DEMO_ENABLED=false` to remove the widget entirely. It also hides itself when
+`OPENAI_API_KEY` is unset, and for visitors who are already signed in.
+
+**Claiming.** A finished demo returns a single-use `claimToken`, which the browser
+keeps in `localStorage`. On the next successful sign-in — by any route: email,
+Google, or the verification link — the app posts it to `/api/demo/claim`, which
+turns it into a real `Extraction` owned by that user and moves the stored original
+across so the document viewer works on it. The claim counts toward their monthly
+usage like any other extraction. A stale, unknown or already-used token reports
+nothing-to-claim rather than erroring, because the browser retries on every
+sign-in while it holds one.
+
+> **Deployment note:** the per-IP cap is only as good as `request.remote_addr`, so
+> `PROXY_HOPS` must match your setup (`1` behind nginx, `2` behind Caddy → nginx,
+> `0` running Flask directly). Get this wrong behind a proxy and every visitor
+> looks like the same IP — the first person to try the demo would use everyone's
+> free extraction.
+
 ## Where do I put my OpenAI API key?
 
 In **`backend/.env`**, as `OPENAI_API_KEY`. The key lives only on the server and
@@ -108,6 +178,7 @@ Browser (React SPA :5173)
    ▼
 Flask API (:5000)
    ├── /api/auth/*        register / login / me   (JWT + werkzeug password hash)
+   ├── /api/demo/*        try-before-signup: anonymous extract + claim (no auth)
    ├── /api/extract       upload → OpenAI vision → structured JSON  (enforces plan limit)
    ├── /api/extractions   list / get / delete / CSV download
    ├── /api/usage         monthly usage vs plan limit
@@ -136,6 +207,9 @@ React context ([frontend/src/lib/auth.jsx](frontend/src/lib/auth.jsx)).
 | POST   | `/api/auth/forgot-password`  | —    | Email a reset link (via Resend)   |
 | POST   | `/api/auth/reset-password`   | —    | Set a new password from a token   |
 | GET    | `/api/auth/me`               | ✓    | Current user + usage              |
+| GET    | `/api/demo/status`           | —    | Free demo extractions left for this IP |
+| POST   | `/api/demo/extract`          | —    | **No account.** One file → structured JSON + claim token |
+| POST   | `/api/demo/claim`            | ✓    | Adopt a demo extraction into the signed-in account |
 | POST   | `/api/extract`               | ✓    | multipart `file` → structured JSON |
 | GET    | `/api/extractions`           | ✓    | List extractions                  |
 | GET    | `/api/extractions/<id>`      | ✓/🔑 | Single extraction                 |
@@ -195,6 +269,16 @@ The `/api/extract` payload follows the PRD invoice schema — see
 
 - **Landing page** — animated hero (invoice → JSON), features, how-it-works,
   API teaser, pricing.
+- **Try before signup** — the landing page runs a **real extraction with no
+  account**: one free document per visitor (per-IP, server-enforced). The parsed
+  fields are shown in full; exporting is what asks for the account. The result is
+  held server-side under a single-use claim token, so signing up **adopts that
+  extraction** instead of making them upload it again. Off via `DEMO_ENABLED=false`.
+- **Funnel analytics** — optional Plausible and/or PostHog, configured purely by
+  env (`VITE_PLAUSIBLE_DOMAIN`, `VITE_POSTHOG_KEY`). With neither set, no
+  third-party script is loaded at all. Tracks pageviews plus the funnel that
+  matters: demo started/completed → signup → extract → checkout → payment. Event
+  names live in `frontend/src/lib/analytics.js`.
 - **Auth** — email/password signup & login, **Google sign-in/sign-up** (Google
   Identity Services → backend ID-token verification), **forgot/reset password**
   via emailed single-use links, JWT sessions, protected routes.
@@ -245,7 +329,8 @@ pytest                 # runs the suite in backend/tests
 ```
 
 The suite covers auth + email verification, plan-capability gating (batch /
-multi-page / usage limits), webhook signing & retry/backoff, and billing
+multi-page / usage limits), the try-before-signup demo (per-IP cap, claiming,
+retention purge), webhook signing & retry/backoff, and billing
 (demo upgrade, Paystack checkout, signed webhooks). Tests use a temporary SQLite DB
 and stub all external services — nothing leaves the machine.
 
@@ -272,5 +357,10 @@ and stub all external services — nothing leaves the machine.
   key set, billing runs in demo mode (instant switch).
 - **Rate limiting:** enabled by default (per-IP). In production set
   `RATELIMIT_STORAGE_URI=redis://...` so limits are shared across workers.
+- **Demo tables:** the try-before-signup feature adds two *new* tables
+  (`demo_usage`, `demo_extractions`). `create_all()` creates missing tables on
+  boot, so this one needs **no migration** — unlike a new column on an existing
+  table. Confirm `PROXY_HOPS` is right for your proxy chain, or the per-IP cap
+  will treat every visitor as one person.
 - **CORS:** set `FRONTEND_ORIGIN` (comma-separated) to your deployed frontend
   URL(s).

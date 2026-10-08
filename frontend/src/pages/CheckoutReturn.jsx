@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/Button";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth.jsx";
 import { PLANS } from "@/lib/plans";
+import { track, EVENTS } from "@/lib/analytics";
 
 // Paystack transaction statuses, from the server-side verify.
 const FAILURE = new Set(["failed", "abandoned", "reversed", "cancelled"]);
@@ -92,6 +93,19 @@ export default function CheckoutReturn() {
       : user?.plan && user.plan !== "free";
     if (activated) setState("success");
   }, [user, state, intendedPlan]);
+
+  // Fire the revenue event once, whichever path confirmed the charge.
+  const trackedRef = useRef(false);
+  useEffect(() => {
+    if (trackedRef.current) return;
+    if (state === "success" || state === "processing") {
+      trackedRef.current = true;
+      track(EVENTS.PAYMENT_SUCCEEDED, {
+        plan: intendedPlan || user?.plan || "unknown",
+        confirmed: state === "success",
+      });
+    }
+  }, [state, intendedPlan, user]);
 
   const planName = PLANS[intendedPlan]?.name || (intendedPlan ?? "your");
 

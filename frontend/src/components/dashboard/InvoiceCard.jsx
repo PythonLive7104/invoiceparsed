@@ -23,8 +23,9 @@ import { Button } from "@/components/ui/Button";
 import { cn, formatMoney } from "@/lib/utils";
 import { api, apiError, downloadFile } from "@/lib/api";
 import { DocumentViewer } from "@/components/dashboard/DocumentViewer";
+import { LockedActions } from "@/components/dashboard/LockedActions";
 
-export function InvoiceCard({ invoice: initial, extractionId, fileName, initialShowDoc = false, onUpdated }) {
+export function InvoiceCard({ invoice: initial, extractionId, fileName, initialShowDoc = false, onUpdated, locked = false, onLockedAction }) {
   const [invoice, setInvoice] = useState(initial);
   const [saved, setSaved] = useState(initial); // last persisted version (for cancel)
   const [editing, setEditing] = useState(false);
@@ -120,7 +121,9 @@ export function InvoiceCard({ invoice: initial, extractionId, fileName, initialS
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          {editing ? (
+          {locked ? (
+            <LockedActions onClick={onLockedAction} />
+          ) : editing ? (
             <>
               <Button size="sm" onClick={saveEdits} disabled={savingState === "saving"}>
                 {savingState === "saving" ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}

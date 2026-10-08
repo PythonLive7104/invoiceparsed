@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useState, useCallback } from "react";
 import { api, setToken, getToken, apiError } from "./api";
+import { claimPendingDemo } from "./demo";
 
 const AuthContext = createContext(null);
 
@@ -19,6 +20,17 @@ export function AuthProvider({ children }) {
       const { data } = await api.get("/api/auth/me");
       setUser(data.user);
       setUsage(data.usage);
+      // If they ran an extraction on the landing page before signing up, adopt
+      // it into this account now. No-ops when there's no pending demo. Kept
+      // non-fatal: a hiccup here must not invalidate an otherwise good session.
+      try {
+        if (await claimPendingDemo()) {
+          const { data: fresh } = await api.get("/api/auth/me");
+          setUsage(fresh.usage);
+        }
+      } catch {
+        /* the claim is a bonus, never a reason to sign someone out */
+      }
     } catch {
       setToken(null);
       setUser(null);

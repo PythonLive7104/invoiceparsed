@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils";
 import { PLAN_ORDER, PLANS } from "@/lib/plans";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth.jsx";
+import { track, EVENTS } from "@/lib/analytics";
 
 export function BillingPlans() {
   const { user, refreshUsage } = useAuth();
@@ -21,6 +22,7 @@ export function BillingPlans() {
   async function choose(planId) {
     if (planId === currentPlan) return;
     setPending(planId);
+    track(EVENTS.CHECKOUT_STARTED, { plan: planId, from: currentPlan || "free" });
     try {
       const { data } = await api.post("/api/billing/checkout", { plan: planId });
       if (data?.url) {

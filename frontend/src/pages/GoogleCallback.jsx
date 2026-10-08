@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Loader2 } from "lucide-react";
 import { useAuth } from "@/lib/auth.jsx";
+import { track, EVENTS } from "@/lib/analytics";
 
 /**
  * Landing page for the Google redirect flow. The backend bounces here with the
@@ -17,9 +18,10 @@ export default function GoogleCallback() {
       navigate("/login?error=google", { replace: true });
       return;
     }
-    adoptToken(token).then((ok) =>
-      navigate(ok ? "/dashboard" : "/login?error=google", { replace: true })
-    );
+    adoptToken(token).then((ok) => {
+      if (ok) track(EVENTS.LOGIN, { method: "google" });
+      return navigate(ok ? "/dashboard" : "/login?error=google", { replace: true });
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

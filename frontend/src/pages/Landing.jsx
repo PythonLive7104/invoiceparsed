@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { MarketingNav } from "@/components/marketing/MarketingNav";
 import { Hero } from "@/components/marketing/Hero";
+import { TryItFree } from "@/components/marketing/TryItFree";
 import { Footer } from "@/components/marketing/Footer";
 import { Reveal } from "@/components/ui/Reveal";
 import { Button } from "@/components/ui/Button";
@@ -51,6 +52,9 @@ export default function Landing() {
       <p className="container-page -mt-2 max-w-3xl pb-2 text-base leading-relaxed text-slate-400">
         {ANSWER}
       </p>
+
+      {/* Try-before-signup — the first thing a visitor can actually do. */}
+      <TryItFree />
 
       <section className="border-y border-white/[0.06] bg-white/[0.015] py-8">
         <div className="container-page grid grid-cols-2 gap-6 text-center sm:grid-cols-4">

@@ -24,9 +24,10 @@ import { Button } from "@/components/ui/Button";
 import { cn, formatMoney } from "@/lib/utils";
 import { api, apiError, downloadFile } from "@/lib/api";
 import { DocumentViewer } from "@/components/dashboard/DocumentViewer";
+import { LockedActions } from "@/components/dashboard/LockedActions";
 
 /** Result card for extracted receipts, with inline editing (parity with InvoiceCard). */
-export function ReceiptCard({ invoice: initial, extractionId, fileName, initialShowDoc = false, onUpdated }) {
+export function ReceiptCard({ invoice: initial, extractionId, fileName, initialShowDoc = false, onUpdated, locked = false, onLockedAction }) {
   const [receipt, setReceipt] = useState(initial);
   const [saved, setSaved] = useState(initial);
   const [editing, setEditing] = useState(false);
@@ -129,7 +130,9 @@ export function ReceiptCard({ invoice: initial, extractionId, fileName, initialS
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          {editing ? (
+          {locked ? (
+            <LockedActions onClick={onLockedAction} />
+          ) : editing ? (
             <>
               <Button size="sm" onClick={saveEdits} disabled={savingState === "saving"}>
                 {savingState === "saving" ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}

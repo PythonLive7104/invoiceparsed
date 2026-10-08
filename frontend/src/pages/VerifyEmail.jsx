@@ -3,6 +3,7 @@ import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { Loader2, AlertCircle, MailCheck } from "lucide-react";
 import { AuthLayout } from "@/components/auth/AuthLayout";
 import { useAuth, apiError } from "@/lib/auth.jsx";
+import { track, EVENTS } from "@/lib/analytics";
 
 /**
  * Landing page for the email-confirmation link (/verify-email?token=...). It
@@ -21,7 +22,10 @@ export default function VerifyEmail() {
     if (!token || ran.current) return;
     ran.current = true; // guard React 18 StrictMode double-invoke
     verifyEmail(token)
-      .then(() => navigate("/dashboard", { replace: true }))
+      .then(() => {
+        track(EVENTS.SIGNUP_VERIFIED, { method: "email" });
+        navigate("/dashboard", { replace: true });
+      })
       .catch((err) => setError(apiError(err, "This confirmation link is invalid or has expired.")));
   }, [token, verifyEmail, navigate]);
 

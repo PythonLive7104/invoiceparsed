@@ -1,6 +1,7 @@
-import { lazy, Suspense } from "react";
+import { lazy, Suspense, useEffect } from "react";
 import { Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { useAuth } from "@/lib/auth.jsx";
+import { trackPageview } from "@/lib/analytics";
 import { ChatWidget } from "@/components/support/ChatWidget";
 import Landing from "@/pages/Landing.jsx";
 import { Loader2 } from "lucide-react";
@@ -33,6 +34,15 @@ const CheckoutReturn = lazy(() => import("@/pages/CheckoutReturn.jsx"));
 const ApiSettings = lazy(() => import("@/pages/ApiSettings.jsx"));
 const Settings = lazy(() => import("@/pages/Settings.jsx"));
 
+/** Count one pageview per client-side route change (the analytics scripts are
+ *  loaded in "manual" mode precisely so this is the only source of pageviews). */
+function usePageviews() {
+  const { pathname } = useLocation();
+  useEffect(() => {
+    trackPageview(pathname);
+  }, [pathname]);
+}
+
 function FullScreenLoader() {
   return (
     <div className="grid min-h-screen place-items-center">
@@ -58,6 +68,8 @@ function PublicOnly({ children }) {
 }
 
 export default function App() {
+  usePageviews();
+
   return (
     <>
     <Suspense fallback={<FullScreenLoader />}>

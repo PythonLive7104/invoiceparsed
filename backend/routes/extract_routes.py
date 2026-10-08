@@ -6,16 +6,19 @@ import shutil
 from datetime import datetime
 
 from flask import Blueprint, Response, current_app, g, jsonify, request, send_file
-from werkzeug.utils import secure_filename
 
 from auth import api_or_login_required
 from config import Config
 from csv_util import invoice_to_csv, receipt_to_csv, statement_to_csv
 from xlsx_util import document_to_xlsx
+from documents import (
+    apply_headline_fields,
+    extraction_dir,
+    list_files,
+    normalize_for,
+    save_files,
+)
 from extensions import db
-from invoice_schema import normalize as normalize_invoice
-from receipt_schema import normalize as normalize_receipt
-from statement_schema import normalize as normalize_statement
 from models import Extraction
 from openai_service import extract_document
 from plans import plan_allows
@@ -28,47 +31,13 @@ ALLOWED_MIME = {"application/pdf", "image/jpeg", "image/jpg", "image/png"}
 ALLOWED_EXT = (".pdf", ".jpg", ".jpeg", ".png")
 DOC_TYPES = ("invoice", "receipt", "statement")
 
-_NORMALIZERS = {"invoice": normalize_invoice, "receipt": normalize_receipt, "statement": normalize_statement}
 _CSV_WRITERS = {"invoice": invoice_to_csv, "receipt": receipt_to_csv, "statement": statement_to_csv}
-
-
-def _normalize_for(doc_type: str):
-    return _NORMALIZERS.get(doc_type, normalize_invoice)
 
 
 def _safe_name(row) -> str:
     """Filesystem-safe base name for an export download."""
     raw = row.invoice_number or row.vendor_name or row.id
     return "".join(c if c.isalnum() or c in "-_" else "_" for c in raw)
-
-
-# ─── Original-file storage ───────────────────────────────────────────────────
-def _extraction_dir(eid: str) -> str:
-    return os.path.join(Config.UPLOAD_DIR, eid)
-
-
-def _save_files(eid: str, pages: list[dict]) -> None:
-    d = _extraction_dir(eid)
-    os.makedirs(d, exist_ok=True)
-    for i, p in enumerate(pages):
-        safe = secure_filename(p["name"]) or f"page{i}"
-        with open(os.path.join(d, f"{i}__{safe}"), "wb") as fh:
-            fh.write(p["bytes"])
-
-
-def _list_files(eid: str) -> list[dict]:
-    d = _extraction_dir(eid)
-    if not os.path.isdir(d):
-        return []
-    out = []
-    for fn in os.listdir(d):
-        idx, sep, orig = fn.partition("__")
-        if not sep or not idx.isdigit():
-            continue
-        mime = mimetypes.guess_type(orig)[0] or "application/octet-stream"
-        out.append({"index": int(idx), "name": orig, "mime": mime})
-    out.sort(key=lambda x: x["index"])
-    return out
 
 
 def _serialize(row: Extraction, data) -> dict:
@@ -81,33 +50,8 @@ def _serialize(row: Extraction, data) -> dict:
         "status": row.status,
         "createdAt": row.created_at.isoformat() + "Z",
         "invoice": data,  # the extracted document (invoice or receipt shape)
-        "files": _list_files(row.id),
+        "files": list_files(row.id),
     }
-
-
-def _apply_headline_fields(row: Extraction, data: dict) -> None:
-    """Denormalize headline fields for fast list rendering. Maps both invoice and
-    receipt shapes onto the shared columns (merchant→vendor, receipt_date→date)."""
-    if row.doc_type == "receipt":
-        row.vendor_name = (data.get("merchant") or {}).get("name")
-        row.invoice_number = data.get("receipt_number")
-        row.invoice_date = data.get("receipt_date")
-        row.due_date = None
-        row.total = data.get("total")
-    elif row.doc_type == "statement":
-        row.vendor_name = data.get("account_holder") or data.get("bank_name")
-        row.invoice_number = data.get("account_number")
-        row.invoice_date = data.get("period_start")
-        row.due_date = data.get("period_end")
-        row.total = data.get("closing_balance")
-    else:
-        row.vendor_name = (data.get("vendor") or {}).get("name")
-        row.invoice_number = data.get("invoice_number")
-        row.invoice_date = data.get("invoice_date")
-        row.due_date = data.get("due_date")
-        row.total = data.get("total")
-    row.currency = data.get("currency")
-    row.data = json.dumps(data)
 
 
 # ─── Extraction ──────────────────────────────────────────────────────────────
@@ -221,7 +165,7 @@ def extract():
     )
     db.session.add(record)
     db.session.commit()
-    _save_files(record.id, pages)  # store originals now so the viewer works regardless
+    save_files(record.id, pages)  # store originals now so the viewer works regardless
 
     try:
         document = extract_document(pages, doc_type)
@@ -232,7 +176,7 @@ def extract():
         return jsonify({"error": f"Extraction failed: {exc}"}), 502
 
     record.status = "completed"
-    _apply_headline_fields(record, document)
+    apply_headline_fields(record, document)
     db.session.commit()
 
     payload = _serialize(record, document)
@@ -286,8 +230,8 @@ def update_extraction(eid):
     if not isinstance(inv, dict):
         return jsonify({"error": "Expected an 'invoice' object."}), 400
 
-    data = _normalize_for(row.doc_type)(inv)
-    _apply_headline_fields(row, data)
+    data = normalize_for(row.doc_type)(inv)
+    apply_headline_fields(row, data)
     db.session.commit()
     return jsonify(_serialize(row, data))
 
@@ -302,7 +246,7 @@ def delete_extraction(eid):
     # usage — deleting history must not reset a plan or statement quota.
     row.deleted_at = datetime.utcnow()
     db.session.commit()
-    shutil.rmtree(_extraction_dir(eid), ignore_errors=True)
+    shutil.rmtree(extraction_dir(eid), ignore_errors=True)
     return jsonify({"success": True})
 
 
@@ -313,7 +257,7 @@ def list_extraction_files(eid):
     row = Extraction.query.filter_by(id=eid, user_id=g.user.id, deleted_at=None).first()
     if row is None:
         return jsonify({"error": "Extraction not found."}), 404
-    return jsonify({"files": _list_files(eid)})
+    return jsonify({"files": list_files(eid)})
 
 
 @extract_bp.get("/extractions/<eid>/file/<int:index>")
@@ -322,7 +266,7 @@ def get_extraction_file(eid, index):
     row = Extraction.query.filter_by(id=eid, user_id=g.user.id, deleted_at=None).first()
     if row is None:
         return jsonify({"error": "Extraction not found."}), 404
-    d = _extraction_dir(eid)
+    d = extraction_dir(eid)
     if os.path.isdir(d):
         for fn in os.listdir(d):
             if fn.startswith(f"{index}__"):

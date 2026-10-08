@@ -4,8 +4,12 @@ import { BrowserRouter } from "react-router-dom";
 import { HelmetProvider } from "react-helmet-async";
 import * as Sentry from "@sentry/react";
 import { AuthProvider } from "@/lib/auth.jsx";
+import { initAnalytics } from "@/lib/analytics";
 import App from "./App.jsx";
 import "./index.css";
+
+// Funnel analytics — no-op unless VITE_PLAUSIBLE_DOMAIN / VITE_POSTHOG_KEY are set.
+initAnalytics();
 
 // Error monitoring — only active when a DSN is provided at build time.
 if (import.meta.env.VITE_SENTRY_DSN) {

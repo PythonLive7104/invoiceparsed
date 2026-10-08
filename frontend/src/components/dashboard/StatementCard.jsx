@@ -15,9 +15,10 @@ import { Button } from "@/components/ui/Button";
 import { cn, formatMoney } from "@/lib/utils";
 import { downloadFile } from "@/lib/api";
 import { DocumentViewer } from "@/components/dashboard/DocumentViewer";
+import { LockedActions } from "@/components/dashboard/LockedActions";
 
 /** Read-only result card for extracted bank statements. */
-export function StatementCard({ invoice: stmt, extractionId, fileName, initialShowDoc = false }) {
+export function StatementCard({ invoice: stmt, extractionId, fileName, initialShowDoc = false, locked = false, onLockedAction }) {
   const [showJson, setShowJson] = useState(false);
   const [showDoc, setShowDoc] = useState(initialShowDoc);
   const [copied, setCopied] = useState(false);
@@ -73,7 +74,8 @@ export function StatementCard({ invoice: stmt, extractionId, fileName, initialSh
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          {extractionId && (
+          {locked && <LockedActions onClick={onLockedAction} />}
+          {!locked && extractionId && (
             <button
               onClick={() => setShowDoc((s) => !s)}
               className={cn(
@@ -84,25 +86,29 @@ export function StatementCard({ invoice: stmt, extractionId, fileName, initialSh
               <ImageIcon size={14} /> Original
             </button>
           )}
-          <button onClick={() => setShowJson((s) => !s)} className="inline-flex h-9 items-center gap-1.5 rounded-lg px-3 text-xs font-medium text-slate-300 transition-colors hover:bg-white/[0.06]">
-            <Code2 size={14} /> {showJson ? "Fields" : "JSON"}
-          </button>
-          <button onClick={copyJson} className="inline-flex h-9 items-center gap-1.5 rounded-lg px-3 text-xs font-medium text-slate-300 transition-colors hover:bg-white/[0.06]">
-            {copied ? <Check size={14} className="text-emerald-400" /> : <Copy size={14} />}
-            {copied ? "Copied" : "Copy"}
-          </button>
-          <Button size="sm" variant="secondary" onClick={downloadJson}>
-            <Download size={14} /> JSON
-          </Button>
-          {extractionId && (
-            <Button size="sm" variant="secondary" onClick={downloadCsv}>
-              <Download size={14} /> CSV
-            </Button>
-          )}
-          {extractionId && (
-            <Button size="sm" onClick={downloadXlsx}>
-              <Download size={14} /> Excel
-            </Button>
+          {!locked && (
+            <>
+              <button onClick={() => setShowJson((s) => !s)} className="inline-flex h-9 items-center gap-1.5 rounded-lg px-3 text-xs font-medium text-slate-300 transition-colors hover:bg-white/[0.06]">
+                <Code2 size={14} /> {showJson ? "Fields" : "JSON"}
+              </button>
+              <button onClick={copyJson} className="inline-flex h-9 items-center gap-1.5 rounded-lg px-3 text-xs font-medium text-slate-300 transition-colors hover:bg-white/[0.06]">
+                {copied ? <Check size={14} className="text-emerald-400" /> : <Copy size={14} />}
+                {copied ? "Copied" : "Copy"}
+              </button>
+              <Button size="sm" variant="secondary" onClick={downloadJson}>
+                <Download size={14} /> JSON
+              </Button>
+              {extractionId && (
+                <Button size="sm" variant="secondary" onClick={downloadCsv}>
+                  <Download size={14} /> CSV
+                </Button>
+              )}
+              {extractionId && (
+                <Button size="sm" onClick={downloadXlsx}>
+                  <Download size={14} /> Excel
+                </Button>
+              )}
+            </>
           )}
         </div>
       </div>

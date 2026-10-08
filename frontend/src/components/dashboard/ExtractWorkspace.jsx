@@ -26,6 +26,7 @@ import { cn, formatBytes } from "@/lib/utils";
 import { api, apiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth.jsx";
 import { planAllows } from "@/lib/plans";
+import { track, EVENTS } from "@/lib/analytics";
 
 const ACCEPT = {
   "application/pdf": [".pdf"],
@@ -115,6 +116,11 @@ export function ExtractWorkspace() {
     setStatus("processing");
     setError(null);
     setUploadPct(0);
+    track(EVENTS.EXTRACT_STARTED, {
+      docType,
+      mode: isCombine ? "combine" : "single",
+      plan: user?.plan || "free",
+    });
     try {
       const fd = new FormData();
       (isCombine ? files : [files[0]]).forEach((f) => fd.append("file", f));
@@ -127,6 +133,11 @@ export function ExtractWorkspace() {
       setResult({ id: data.id, fileName: data.fileName, invoice: data.invoice, docType: data.docType });
       setUsage(data.usage);
       setStatus("done");
+      track(EVENTS.EXTRACT_COMPLETED, {
+        docType: data.docType,
+        mode: isCombine ? "combine" : "single",
+        plan: user?.plan || "free",
+      });
     } catch (err) {
       if (err?.response?.data?.usage) setUsage(err.response.data.usage);
       setError(apiError(err, "Extraction failed."));
@@ -141,6 +152,12 @@ export function ExtractWorkspace() {
     setMode("batch");
     setStatus("processing");
     setBatchItems(files.map((f) => ({ name: f.name, status: "pending" })));
+    track(EVENTS.EXTRACT_STARTED, {
+      docType,
+      mode: "batch",
+      plan: user?.plan || "free",
+      count: files.length,
+    });
     for (let i = 0; i < files.length; i++) {
       setBatchItems((prev) => prev.map((it, idx) => (idx === i ? { ...it, status: "processing", pct: 0 } : it)));
       try {
@@ -168,6 +185,7 @@ export function ExtractWorkspace() {
       }
     }
     setStatus("done");
+    track(EVENTS.EXTRACT_COMPLETED, { docType, mode: "batch", plan: user?.plan || "free" });
     refreshUsage();
   }
 

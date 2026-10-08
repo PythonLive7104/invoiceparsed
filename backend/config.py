@@ -43,6 +43,18 @@ class Config:
     # Where the contact form sends messages.
     CONTACT_TO = os.getenv("CONTACT_TO", "invoiceparsed@gmail.com")
 
+    # ─── Try-before-signup demo ──────────────────────────────────────────────
+    # Lets a visitor extract a document on the landing page with no account. The
+    # result is shown in full but exports are gated behind signup; the extraction
+    # is held server-side so the new account can claim it instead of re-uploading.
+    DEMO_ENABLED = os.getenv("DEMO_ENABLED", "true").lower() == "true"
+    # Hard per-IP lifetime cap (durable, survives restarts — see DemoUsage).
+    DEMO_FREE_EXTRACTIONS = int(os.getenv("DEMO_FREE_EXTRACTIONS", "1"))
+    # Unclaimed demo results (and their uploaded files) are purged after this long.
+    DEMO_RETENTION_HOURS = int(os.getenv("DEMO_RETENTION_HOURS", "24"))
+    # Burst limit on the demo endpoint, on top of the per-IP cap above.
+    RATELIMIT_DEMO = os.getenv("RATELIMIT_DEMO", "6 per hour")
+
     # Rate limits for support endpoints (per IP).
     RATELIMIT_CHAT = os.getenv("RATELIMIT_CHAT", "20 per minute")
     RATELIMIT_CONTACT = os.getenv("RATELIMIT_CONTACT", "5 per minute")

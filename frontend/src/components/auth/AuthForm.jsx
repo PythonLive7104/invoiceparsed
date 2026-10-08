@@ -4,6 +4,7 @@ import { Loader2, Mail, Lock, User as UserIcon, AlertCircle, MailCheck } from "l
 import { Button } from "@/components/ui/Button";
 import { GoogleButton, googleEnabled } from "@/components/auth/GoogleButton";
 import { useAuth, apiError } from "@/lib/auth.jsx";
+import { track, EVENTS } from "@/lib/analytics";
 
 export function AuthForm({ mode }) {
   const navigate = useNavigate();
@@ -33,11 +34,13 @@ export function AuthForm({ mode }) {
     try {
       if (isSignup) {
         await register(name, email, password);
+        track(EVENTS.SIGNUP_SUBMITTED, { method: "email" });
         setSentTo(email);
         setLoading(false);
         return;
       }
       await login(email, password);
+      track(EVENTS.LOGIN, { method: "email" });
       navigate(next, { replace: true });
     } catch (err) {
       setError(apiError(err, "Something went wrong."));

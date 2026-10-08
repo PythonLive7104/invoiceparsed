@@ -54,10 +54,16 @@ export default {
           "0%": { transform: "scale(0.9)", opacity: "0.7" },
           "100%": { transform: "scale(1.6)", opacity: "0" },
         },
+        // Sliding bar for work of unknown duration (server-side extraction).
+        indeterminate: {
+          "0%": { transform: "translateX(-100%)" },
+          "100%": { transform: "translateX(300%)" },
+        },
       },
       animation: {
         float: "float 6s ease-in-out infinite",
         "pulse-ring": "pulse-ring 1.8s cubic-bezier(0.22,1,0.36,1) infinite",
+        indeterminate: "indeterminate 1.4s ease-in-out infinite",
       },
     },
   },

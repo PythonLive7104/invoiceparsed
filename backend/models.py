@@ -102,6 +102,45 @@ class Extraction(db.Model):
         }
 
 
+class DemoUsage(db.Model):
+    """Durable per-IP counter for the try-before-signup demo.
+
+    Kept separate from DemoExtraction (which is purged after a day) so that
+    purging stored results never hands an IP a fresh free extraction. The IP is
+    stored only as a salted hash — we never need the address itself.
+    """
+    __tablename__ = "demo_usage"
+
+    ip_hash = db.Column(db.String(64), primary_key=True)
+    count = db.Column(db.Integer, nullable=False, default=0)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    last_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class DemoExtraction(db.Model):
+    """An extraction run by an anonymous visitor on the landing page.
+
+    Holds the result (and the uploaded file) just long enough for the visitor to
+    create an account and claim it, so signing up doesn't mean re-uploading. Rows
+    older than Config.DEMO_RETENTION_HOURS are purged, claimed or not.
+    """
+    __tablename__ = "demo_extractions"
+
+    id = db.Column(db.String, primary_key=True, default=_uuid)
+    ip_hash = db.Column(db.String(64), nullable=False, index=True)
+    # Single-use secret the browser holds and presents to claim this result.
+    claim_token = db.Column(db.String(64), nullable=False, unique=True, index=True)
+
+    doc_type = db.Column(db.String(20), nullable=False, default="invoice")
+    file_name = db.Column(db.String(255), nullable=False)
+    file_type = db.Column(db.String(100), nullable=False)
+    file_size = db.Column(db.Integer, nullable=False)
+    data = db.Column(db.Text, nullable=False)
+
+    claimed_at = db.Column(db.DateTime, nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+
+
 class ApiKey(db.Model):
     __tablename__ = "api_keys"
 
