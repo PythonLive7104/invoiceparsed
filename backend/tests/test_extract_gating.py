@@ -24,6 +24,17 @@ def _stub_extract(monkeypatch):
     monkeypatch.setattr(er, "extract_document", lambda pages, doc_type="invoice": FAKE_INVOICE)
 
 
+def _set_page_cap(monkeypatch, pages):
+    """Patch the Config the route actually holds.
+
+    extract_routes does `from config import Config`, so it keeps a reference to
+    the class object — patching "config.Config.X" by name would miss it if the
+    config module has been reloaded (tests/test_config.py does exactly that).
+    """
+    import routes.extract_routes as er
+    monkeypatch.setattr(er.Config, "MAX_PAGES_PER_DOC", pages)
+
+
 def test_batch_blocked_on_free(client, app, monkeypatch):
     _stub_extract(monkeypatch)
     user = make_user(app, plan="free")
@@ -307,3 +318,34 @@ def test_usage_limit_reached_returns_402(client, app, monkeypatch):
     )
     assert r.status_code == 402
     assert r.get_json()["code"] == "LIMIT_REACHED"
+
+
+def test_page_count_capped(client, app, monkeypatch):
+    """Pages all ride in one model request, so the count is a cost multiplier
+    and must be capped regardless of plan."""
+    _stub_extract(monkeypatch)
+    _set_page_cap(monkeypatch, 3)
+    user = make_user(app, email="pro@example.com", plan="pro")
+
+    r = client.post(
+        "/api/extract",
+        data={"file": [_file(f"p{i}.png") for i in range(4)]},
+        headers=auth_header(app, user),
+        content_type="multipart/form-data",
+    )
+    assert r.status_code == 413
+    assert r.get_json()["code"] == "TOO_MANY_PAGES"
+
+
+def test_page_count_at_cap_allowed(client, app, monkeypatch):
+    _stub_extract(monkeypatch)
+    _set_page_cap(monkeypatch, 3)
+    user = make_user(app, email="pro2@example.com", plan="pro")
+
+    r = client.post(
+        "/api/extract",
+        data={"file": [_file(f"p{i}.png") for i in range(3)]},
+        headers=auth_header(app, user),
+        content_type="multipart/form-data",
+    )
+    assert r.status_code == 200

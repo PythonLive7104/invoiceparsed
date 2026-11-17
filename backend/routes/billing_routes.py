@@ -65,7 +65,23 @@ def checkout():
 @billing_bp.post("/billing/upgrade")
 @login_required
 def upgrade():
-    """Demo instant plan switch (kept for the demo experience / non-live setups)."""
+    """Demo instant plan switch — ONLY when no payment provider is configured.
+
+    With Paystack configured this endpoint would hand out any paid plan to any
+    authenticated caller for free, so it is refused outright: a real upgrade must
+    go through /billing/checkout and be applied by /verify or /webhook once the
+    charge succeeds. It stays open in demo mode so local dev and the hosted demo
+    keep a clickable upgrade flow.
+    """
+    if billing.is_configured():
+        return (
+            jsonify({
+                "error": "Plan changes must go through checkout.",
+                "code": "CHECKOUT_REQUIRED",
+            }),
+            403,
+        )
+
     data = request.get_json(silent=True) or {}
     plan = data.get("plan")
     if plan not in PLANS:

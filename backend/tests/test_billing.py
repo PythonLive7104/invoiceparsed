@@ -14,6 +14,21 @@ def test_demo_upgrade_changes_plan(client, app):
     assert r.get_json()["user"]["plan"] == "pro"
 
 
+def test_demo_upgrade_refused_when_paystack_is_live(client, app, monkeypatch):
+    """The instant switch must not be a free pass to a paid plan in production."""
+    monkeypatch.setattr(billing.Config, "PAYSTACK_SECRET_KEY", SECRET)
+    user = make_user(app, plan="free")
+    r = client.post(
+        "/api/billing/upgrade", json={"plan": "business"}, headers=auth_header(app, user)
+    )
+    assert r.status_code == 403
+    assert r.get_json()["code"] == "CHECKOUT_REQUIRED"
+
+    from models import User
+    with app.app_context():
+        assert User.query.get(user["id"]).plan == "free"
+
+
 def test_checkout_falls_back_to_demo_when_unconfigured(client, app):
     user = make_user(app, plan="free")
     r = client.post("/api/billing/checkout", json={"plan": "starter"}, headers=auth_header(app, user))

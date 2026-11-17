@@ -122,6 +122,11 @@ class Config:
     MAX_CONTENT_LENGTH = 64 * 1024 * 1024  # request body cap (allows several pages)
     MAX_FILE_BYTES = 10 * 1024 * 1024      # 10MB per file, per the PRD
     UPLOAD_DIR = os.getenv("UPLOAD_DIR", os.path.join(BASE_DIR, "uploads"))
+    # Hard cap on how many files may be submitted as the pages of ONE document.
+    # Every page is another base64 image/PDF inside the same model request, so an
+    # uncapped page count is an uncapped bill for a single call — the body cap
+    # above alone would wave through roughly six full-size files.
+    MAX_PAGES_PER_DOC = int(os.getenv("MAX_PAGES_PER_DOC", "10"))
 
     # Rate limiting (Flask-Limiter). In production point storage at Redis, e.g.
     # RATELIMIT_STORAGE_URI=redis://localhost:6379, so limits are shared across
@@ -131,10 +136,25 @@ class Config:
     RATELIMIT_DEFAULT = os.getenv("RATELIMIT_DEFAULT", "300 per minute")
     # Tighter budget for unauthenticated/credential endpoints (per IP).
     RATELIMIT_AUTH = os.getenv("RATELIMIT_AUTH", "10 per minute")
+    # Per-ACCOUNT ceiling on /api/extract. This is a cost control, not an abuse
+    # control: every allowed call spends an OpenAI vision request, and the Pro and
+    # Business plans have no monthly document limit at all, so under the 300/min
+    # default a single scripted account could run up a very large bill in minutes.
+    # Keyed on the account (see auth.rate_limit_key) rather than the IP, so one
+    # account cannot multiply its budget by spreading calls across addresses.
+    RATELIMIT_EXTRACT = os.getenv("RATELIMIT_EXTRACT", "20 per minute")
 
     # Webhooks
     WEBHOOK_TIMEOUT = 6  # seconds per delivery attempt
     WEBHOOK_MAX_ATTEMPTS = int(os.getenv("WEBHOOK_MAX_ATTEMPTS", "4"))  # total tries
     WEBHOOK_BACKOFF_BASE = float(os.getenv("WEBHOOK_BACKOFF_BASE", "2"))  # seconds; *2^n
     WEBHOOK_BACKOFF_CAP = float(os.getenv("WEBHOOK_BACKOFF_CAP", "60"))  # max sleep between tries
+    # Webhook URLs are customer-supplied and fetched from inside our network, so
+    # hosts resolving to private/loopback/link-local addresses are refused (see
+    # webhooks.assert_safe_url) — that's the Postgres and Redis containers, the
+    # API itself, and the cloud metadata endpoint. Set true ONLY for local
+    # development against a webhook receiver on your own machine.
+    WEBHOOK_ALLOW_PRIVATE_HOSTS = (
+        os.getenv("WEBHOOK_ALLOW_PRIVATE_HOSTS", "false").lower() == "true"
+    )
     API_KEY_PREFIX = "ip_live_"

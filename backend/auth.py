@@ -216,6 +216,43 @@ def _resolve_api_key() -> tuple[User | None, ApiKey | None]:
     return User.query.get(key.user_id), key
 
 
+# ─── Rate-limit identity ─────────────────────────────────────────────────────
+def rate_limit_key() -> str:
+    """Flask-Limiter key for per-account limits on expensive endpoints.
+
+    Flask-Limiter enforces limits in a before_request hook — before any auth
+    decorator has run — so g.user is not available yet and the caller has to be
+    identified from the credential itself.
+
+    Keyed on the *account*, not the credential: a JWT yields its "sub" claim with
+    no database hit, and an API key is resolved to its owner so that minting ten
+    keys doesn't multiply the budget ten times. Falls back to the client IP for
+    unauthenticated callers (they are about to get a 401 anyway).
+
+    The API-key branch costs one indexed SELECT that the auth decorator then
+    repeats. That is deliberate: on an endpoint where every allowed request
+    spends an OpenAI vision call, a duplicate primary-key lookup is noise.
+    """
+    header = request.headers.get("Authorization", "")
+    token = header[7:].strip() if header.startswith("Bearer ") else ""
+    raw_key = request.headers.get("X-API-Key") or ""
+
+    prefix = current_app.config["API_KEY_PREFIX"]
+    if not raw_key and token.startswith(prefix):
+        raw_key = token
+
+    if raw_key:
+        key = ApiKey.query.filter_by(key_hash=hash_api_key(raw_key)).first()
+        if key is not None:
+            return f"user:{key.user_id}"
+    elif token:
+        payload = decode_token(token)
+        if payload and payload.get("sub"):
+            return f"user:{payload['sub']}"
+
+    return f"ip:{request.remote_addr}"
+
+
 # ─── Decorators ──────────────────────────────────────────────────────────────
 def login_required(fn):
     """Protect a route with a JWT session; attaches the user to flask.g.user."""

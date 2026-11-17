@@ -7,13 +7,9 @@ from auth import login_required
 from extensions import db
 from models import Webhook
 from plans import plan_allows
-from webhooks import deliver
+from webhooks import UnsafeWebhookUrl, assert_safe_url, deliver
 
 webhook_bp = Blueprint("webhooks", __name__, url_prefix="/api/webhooks")
-
-
-def _valid_url(url: str) -> bool:
-    return isinstance(url, str) and url.startswith(("http://", "https://")) and len(url) <= 2048
 
 
 @webhook_bp.get("")
@@ -35,8 +31,10 @@ def create_webhook():
 
     data = request.get_json(silent=True) or {}
     url = (data.get("url") or "").strip()
-    if not _valid_url(url):
-        return jsonify({"error": "Enter a valid http(s) URL."}), 400
+    try:
+        assert_safe_url(url)
+    except UnsafeWebhookUrl as exc:
+        return jsonify({"error": str(exc), "code": "INVALID_WEBHOOK_URL"}), 400
 
     hook = Webhook(user_id=g.user.id, url=url, secret="whsec_" + secrets.token_urlsafe(24))
     db.session.add(hook)

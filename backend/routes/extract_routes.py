@@ -7,7 +7,7 @@ from datetime import datetime
 
 from flask import Blueprint, Response, current_app, g, jsonify, request, send_file
 
-from auth import api_or_login_required
+from auth import api_or_login_required, rate_limit_key
 from config import Config
 from csv_util import invoice_to_csv, receipt_to_csv, statement_to_csv
 from xlsx_util import document_to_xlsx
@@ -18,7 +18,7 @@ from documents import (
     normalize_for,
     save_files,
 )
-from extensions import db
+from extensions import db, limiter
 from models import Extraction
 from openai_service import extract_document
 from plans import plan_allows
@@ -56,6 +56,10 @@ def _serialize(row: Extraction, data) -> dict:
 
 # ─── Extraction ──────────────────────────────────────────────────────────────
 @extract_bp.post("/extract")
+@limiter.limit(
+    lambda: current_app.config["RATELIMIT_EXTRACT"],
+    key_func=rate_limit_key,
+)
 @api_or_login_required
 def extract():
     user = g.user
@@ -80,6 +84,19 @@ def extract():
     files = [f for f in request.files.getlist("file") if f and f.filename]
     if not files:
         return jsonify({"error": "No file provided."}), 400
+
+    # Every page rides along in the same model request, so the page count is a
+    # direct multiplier on what this one call costs. Cap it before reading any
+    # bytes, independent of the request body cap.
+    if len(files) > Config.MAX_PAGES_PER_DOC:
+        return (
+            jsonify({
+                "error": f"A document may have at most {Config.MAX_PAGES_PER_DOC} "
+                         f"pages per request (received {len(files)}).",
+                "code": "TOO_MANY_PAGES",
+            }),
+            413,
+        )
 
     doc_type = (request.form.get("doc_type") or "invoice").lower()
     if doc_type not in DOC_TYPES:

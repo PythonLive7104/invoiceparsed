@@ -13,11 +13,15 @@ Each request includes:
 """
 import hashlib
 import hmac
+import ipaddress
 import json
+import logging
+import socket
 import threading
 import time
 import uuid
 from datetime import datetime
+from urllib.parse import urlsplit
 
 import httpx
 
@@ -25,9 +29,85 @@ from config import Config
 from extensions import db
 from models import Webhook
 
+logger = logging.getLogger(__name__)
+
 
 def sign(secret: str, body: bytes) -> str:
     return hmac.new(secret.encode("utf-8"), body, hashlib.sha256).hexdigest()
+
+
+# ─── SSRF guard ──────────────────────────────────────────────────────────────
+# A webhook URL is attacker-supplied and we fetch it from inside the network, so
+# without this a customer could aim one at the Postgres container, Redis, or the
+# cloud metadata endpoint and read the status code back off the /test endpoint.
+class UnsafeWebhookUrl(Exception):
+    """Raised when a webhook URL resolves somewhere we refuse to send to."""
+
+
+def _is_forbidden_ip(ip: ipaddress._BaseAddress) -> bool:
+    """True for any address that isn't a normal public destination."""
+    # ::ffff:127.0.0.1 and friends: judge the embedded IPv4 address instead.
+    mapped = getattr(ip, "ipv4_mapped", None)
+    if mapped is not None:
+        return _is_forbidden_ip(mapped)
+    return (
+        ip.is_private        # 10/8, 172.16/12, 192.168/16, fc00::/7 — our own network
+        or ip.is_loopback    # 127/8, ::1 — the API itself, the admin panel
+        or ip.is_link_local  # 169.254/16 — cloud instance metadata
+        or ip.is_multicast
+        or ip.is_reserved
+        or ip.is_unspecified
+    )
+
+
+def assert_safe_url(url: str) -> None:
+    """Raise UnsafeWebhookUrl unless `url` is an http(s) URL whose host resolves
+    entirely to public addresses.
+
+    Every resolved address must be public, not just the first: a hostname with
+    both a public and a private record would otherwise be a coin flip. Set
+    WEBHOOK_ALLOW_PRIVATE_HOSTS=true to switch the check off for local testing.
+    """
+    if not isinstance(url, str) or len(url) > 2048:
+        raise UnsafeWebhookUrl("Enter a valid http(s) URL.")
+
+    parts = urlsplit(url)
+    if parts.scheme not in ("http", "https"):
+        raise UnsafeWebhookUrl("Enter a valid http(s) URL.")
+    host = parts.hostname
+    if not host:
+        raise UnsafeWebhookUrl("Enter a valid http(s) URL.")
+
+    if Config.WEBHOOK_ALLOW_PRIVATE_HOSTS:
+        return
+
+    try:
+        infos = socket.getaddrinfo(host, parts.port or None, proto=socket.IPPROTO_TCP)
+    except (socket.gaierror, UnicodeError, ValueError) as exc:
+        raise UnsafeWebhookUrl(f"Could not resolve '{host}'.") from exc
+
+    addresses = {info[4][0] for info in infos}
+    if not addresses:
+        raise UnsafeWebhookUrl(f"Could not resolve '{host}'.")
+
+    for raw in addresses:
+        try:
+            ip = ipaddress.ip_address(raw)
+        except ValueError:
+            raise UnsafeWebhookUrl(f"Could not resolve '{host}'.") from None
+        if _is_forbidden_ip(ip):
+            raise UnsafeWebhookUrl(
+                "That URL points to a private or internal address. "
+                "Webhooks must target a publicly reachable host."
+            )
+
+
+def url_is_safe(url: str) -> bool:
+    try:
+        assert_safe_url(url)
+        return True
+    except UnsafeWebhookUrl:
+        return False
 
 
 def _backoff_delay(attempt: int) -> float:
@@ -45,8 +125,24 @@ def _attempt(webhook: Webhook, event: str, body: bytes, delivery_id: str, attemp
         "X-InvoiceParsed-Attempt": str(attempt),
         "X-InvoiceParsed-Signature": f"sha256={sign(webhook.secret, body)}",
     }
+    # Re-validate on every attempt, not just at creation: DNS can be re-pointed
+    # at a private address after a URL was accepted (rebinding).
+    if not url_is_safe(webhook.url):
+        logger.warning(
+            "webhook %s skipped: %s no longer resolves to a public address",
+            webhook.id, webhook.url,
+        )
+        return 0
     try:
-        resp = httpx.post(webhook.url, content=body, headers=headers, timeout=Config.WEBHOOK_TIMEOUT)
+        resp = httpx.post(
+            webhook.url,
+            content=body,
+            headers=headers,
+            timeout=Config.WEBHOOK_TIMEOUT,
+            # httpx's default, made explicit: following a redirect would hand an
+            # attacker a one-hop route past the guard above.
+            follow_redirects=False,
+        )
         return resp.status_code
     except Exception:
         return 0

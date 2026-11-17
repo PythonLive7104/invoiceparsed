@@ -32,10 +32,19 @@ def _db_uri(monkeypatch, **env):
 
 @pytest.fixture(autouse=True)
 def _restore_config():
-    """Whatever a case does, put the real module back afterwards."""
-    yield
+    """Whatever a case does, put the real module back afterwards.
+
+    Reloading rebuilds Config as a *new* class object, while every module that
+    did `from config import Config` still points at the original. Restoring the
+    original class rather than leaving the reloaded one in place keeps those
+    references and `config.Config` the same object, so that patching
+    "config.Config.<attr>" in a later test still reaches the running app.
+    """
     import config
+    original = config.Config
+    yield
     importlib.reload(config)
+    config.Config = original
 
 
 def test_database_url_is_used(monkeypatch):
