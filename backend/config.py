@@ -50,6 +50,15 @@ class Config:
     # makes a transaction-mode pooler (pgBouncer / the Supabase pooler on 6543)
     # usable. Cheap: one round-trip per checkout, and we keep no large pool.
     SQLALCHEMY_ENGINE_OPTIONS = {"pool_pre_ping": True}
+    # Create any missing tables straight from the models at startup.
+    #
+    # Convenient for host-only dev and the test suite, but WRONG for a database
+    # that holds real rows: create_all() only ever creates missing *tables*. It
+    # never adds a column, changes a type or backfills, so a model change would
+    # appear to deploy cleanly and then fail at runtime on the missing column.
+    # The Docker deploy therefore sets this false and runs `flask db upgrade`
+    # (Alembic) before gunicorn starts — see migrations/ and DEPLOY.md.
+    AUTO_CREATE_TABLES = os.getenv("AUTO_CREATE_TABLES", "true").lower() == "true"
 
     # OpenAI
     OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")

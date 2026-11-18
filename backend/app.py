@@ -14,7 +14,8 @@ from werkzeug.exceptions import RequestEntityTooLarge
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 from config import Config
-from extensions import db, limiter
+from json_provider import DecimalJSONProvider
+from extensions import db, limiter, migrate
 from plans import PLANS, PLAN_ORDER
 from routes import (
     auth_bp,
@@ -48,6 +49,9 @@ def create_app(config_class=Config) -> Flask:
     _init_sentry(config_class)
 
     app = Flask(__name__)
+    # Serialize Decimal as an exact decimal string rather than letting it reach
+    # a JS client as an IEEE-754 double. See json_provider.py.
+    app.json = DecimalJSONProvider(app)
     app.config.from_object(config_class)
 
     # Behind reverse proxies: trust N hops of X-Forwarded-* so request.remote_addr
@@ -58,6 +62,9 @@ def create_app(config_class=Config) -> Flask:
         app.wsgi_app = ProxyFix(app.wsgi_app, x_for=hops, x_proto=hops, x_host=hops)
 
     db.init_app(app)
+    # Alembic. Gives `flask db migrate` / `flask db upgrade` and is what keeps a
+    # database holding real rows in step with the models.
+    migrate.init_app(app, db)
 
     # Rate limiting. Config keys (RATELIMIT_*) are read by Flask-Limiter directly.
     limiter.init_app(app)
@@ -104,8 +111,12 @@ def create_app(config_class=Config) -> Flask:
     def not_found(_e):
         return jsonify({"error": "Not found."}), 404
 
-    with app.app_context():
-        db.create_all()
+    # Dev/test convenience only; the deploy applies migrations instead. See the
+    # AUTO_CREATE_TABLES note in config.py for why create_all() is not enough
+    # for a database with real data in it.
+    if app.config.get("AUTO_CREATE_TABLES", True):
+        with app.app_context():
+            db.create_all()
 
     return app
 

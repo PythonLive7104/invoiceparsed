@@ -18,6 +18,11 @@ COPY . .
 RUN mkdir -p /app/uploads
 EXPOSE 5000
 
+# The entrypoint applies database migrations, then execs the CMD below. A failed
+# migration stops the container rather than serving against a mismatched schema.
+# It is Python, not a shell script, so CRLF line endings cannot break it.
+ENTRYPOINT ["python", "/app/docker_entrypoint.py"]
+
 # gunicorn.conf.py binds 0.0.0.0:5000 and uses threaded workers (webhook
 # delivery runs in background threads).
 CMD ["gunicorn", "-c", "gunicorn.conf.py", "wsgi:app"]

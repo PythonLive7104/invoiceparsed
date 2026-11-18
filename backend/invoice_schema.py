@@ -3,6 +3,8 @@
 `INVOICE_JSON_SCHEMA` is handed to OpenAI's structured-output API; `normalize`
 coerces any model output into a predictable shape with all keys present.
 """
+from money import money as _money
+from money import rate as _rate
 
 # JSON Schema passed to OpenAI response_format=json_schema (strict mode).
 INVOICE_JSON_SCHEMA = {
@@ -96,13 +98,6 @@ CONFIDENCE_FIELDS = (
 )
 
 
-def _num(value):
-    if value is None or value == "":
-        return None
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return None
 
 
 def _conf_value(value):
@@ -136,14 +131,14 @@ def normalize(raw: dict) -> dict:
         "line_items": [
             {
                 "description": (it or {}).get("description") or "",
-                "quantity": _num((it or {}).get("quantity")),
-                "unit_price": _num((it or {}).get("unit_price")),
-                "amount": _num((it or {}).get("amount")),
+                "quantity": _rate((it or {}).get("quantity")),
+                "unit_price": _rate((it or {}).get("unit_price")),
+                "amount": _money((it or {}).get("amount")),
             }
             for it in items
         ],
-        "subtotal": _num(raw.get("subtotal")),
-        "tax": _num(raw.get("tax")),
-        "total": _num(raw.get("total")),
+        "subtotal": _money(raw.get("subtotal")),
+        "tax": _money(raw.get("tax")),
+        "total": _money(raw.get("total")),
         "confidence": {field: _conf_value(conf.get(field)) for field in CONFIDENCE_FIELDS},
     }

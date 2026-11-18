@@ -14,7 +14,6 @@ Each request includes:
 import hashlib
 import hmac
 import ipaddress
-import json
 import logging
 import socket
 import threading
@@ -26,6 +25,7 @@ from urllib.parse import urlsplit
 import httpx
 
 from config import Config
+from json_provider import dumps as json_dumps
 from extensions import db
 from models import Webhook
 
@@ -155,7 +155,7 @@ def deliver(webhook: Webhook, event: str, data: dict, *, sleep=time.sleep, max_a
     `max_attempts` overrides the configured budget — the manual "test" endpoint
     passes 1 so it doesn't block the request thread on backoff sleeps.
     """
-    body = json.dumps({"event": event, "data": data}, separators=(",", ":")).encode("utf-8")
+    body = json_dumps({"event": event, "data": data}, separators=(",", ":")).encode("utf-8")
     delivery_id = uuid.uuid4().hex
     if max_attempts is None:
         max_attempts = Config.WEBHOOK_MAX_ATTEMPTS

@@ -1,5 +1,6 @@
 """Plan-capability gating + usage limits on /api/extract."""
 import io
+from decimal import Decimal
 
 from tests.conftest import make_user, auth_header
 
@@ -127,7 +128,9 @@ def test_receipt_extraction_stores_doc_type_and_headline(client, app, monkeypatc
         assert row.doc_type == "receipt"
         assert row.vendor_name == "Cafe Roma"
         assert row.invoice_date == "2026-02-01"
-        assert row.total == 10.3
+        # Numeric column -> Decimal, exact. Compared against a string so a
+        # float never enters the comparison.
+        assert row.total == Decimal("10.30")
 
 
 def test_receipt_patch_uses_receipt_schema(client, app, monkeypatch):
@@ -150,7 +153,8 @@ def test_receipt_patch_uses_receipt_schema(client, app, monkeypatch):
     body = r.get_json()
     # Receipt-shaped fields survive the PATCH (proves receipt normalize was used).
     assert body["invoice"]["merchant"]["name"] == "Edited Cafe"
-    assert body["invoice"]["tip"] == 3.5
+    # Money crosses the wire as an exact decimal string, always 2 places.
+    assert body["invoice"]["tip"] == "3.50"
     assert body["docType"] == "receipt"
 
 

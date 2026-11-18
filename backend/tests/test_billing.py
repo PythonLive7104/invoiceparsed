@@ -231,7 +231,8 @@ def test_webhook_records_payment_and_history_lists_it(client, app, monkeypatch):
     rows = hist.get_json()["payments"]
     assert len(rows) == 1
     assert rows[0]["paymentId"] == "ref_abc123"
-    assert rows[0]["amount"] == 19.0  # cents → major units
+    # Major units as an exact decimal string, not a float: 1900 cents -> "19.00".
+    assert rows[0]["amount"] == "19.00"
     assert rows[0]["plan"] == "starter"
 
 

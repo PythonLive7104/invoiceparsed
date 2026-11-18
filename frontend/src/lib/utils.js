@@ -43,3 +43,19 @@ export function initials(nameOrEmail) {
     (parts[0]?.[0] ?? "?").toUpperCase() + (parts[1]?.[0] ?? "").toUpperCase()
   );
 }
+
+/**
+ * Normalize a money/quantity field the user typed, for sending to the API.
+ *
+ * Deliberately does NOT call Number(): amounts cross the wire as exact decimal
+ * strings and the backend parses them with Decimal, so converting to a float
+ * here would reintroduce exactly the imprecision the backend works to avoid
+ * ("0.07" becoming 0.07000000000000001). Whitespace is trimmed and an empty
+ * field becomes null; anything else is passed through untouched and validated
+ * server-side, which is the only place that can report a bad value properly.
+ */
+export function numericInput(v) {
+  if (v === null || v === undefined) return null;
+  const trimmed = String(v).trim();
+  return trimmed === "" ? null : trimmed;
+}

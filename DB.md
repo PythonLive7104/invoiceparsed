@@ -63,6 +63,48 @@ configuration, but change it for anything real.
   tables but never alters existing ones. New columns need a manual
   `ALTER TABLE`; new tables appear on their own.
 
+## Schema changes (migrations)
+
+The schema is owned by Alembic (via Flask-Migrate), not by `db.create_all()`.
+`create_all()` only ever creates *missing tables* - it never adds a column,
+changes a type, or backfills - so on a database with real rows a model change
+would appear to deploy cleanly and then fail at runtime on the missing column.
+
+**Changing the schema:**
+
+```bash
+cd backend
+# 1. Edit models.py
+# 2. Generate a migration and READ IT before committing
+flask --app app db migrate -m "add supplier tax id"
+# 3. Apply locally
+flask --app app db upgrade
+```
+
+Always read the generated migration. Autogenerate is good at added tables and
+columns, and unreliable about renames (it emits a drop plus an add, which loses
+the data) and about server defaults.
+
+**On deploy:** nothing to do. `docker_entrypoint.py` runs `db_bootstrap.py`
+before gunicorn starts, and a failed migration stops the container rather than
+letting it serve traffic against a mismatched schema.
+
+**Useful commands:**
+
+```bash
+flask --app app db current      # revision this database is on
+flask --app app db history      # all revisions
+flask --app app db downgrade -1 # step back one (check the downgrade path first)
+```
+
+**Adopting a database that predates migrations.** The deploy that ran before
+migrations existed has the tables but no `alembic_version`. `db_bootstrap.py`
+detects exactly that and stamps the baseline revision, which writes only the
+one-row bookkeeping table and leaves your data alone. It is idempotent, so
+re-running it is safe. If it finds tables but neither `alembic_version` nor the
+expected pre-migration tables, it refuses to guess and exits non-zero - inspect
+the database by hand in that case.
+
 ## Backups
 
 The `db-backup` service writes a gzipped dump to `./backups` once a day and keeps

@@ -15,6 +15,7 @@ from documents import (
     apply_headline_fields,
     extraction_dir,
     list_files,
+    load_document,
     normalize_for,
     save_files,
 )
@@ -227,11 +228,7 @@ def get_extraction(eid):
     row = Extraction.query.filter_by(id=eid, user_id=g.user.id, deleted_at=None).first()
     if row is None:
         return jsonify({"error": "Extraction not found."}), 404
-    try:
-        invoice = json.loads(row.data)
-    except json.JSONDecodeError:
-        invoice = None
-    return jsonify(_serialize(row, invoice))
+    return jsonify(_serialize(row, load_document(row)))
 
 
 @extract_bp.patch("/extractions/<eid>")
@@ -299,7 +296,9 @@ def download_csv(eid):
     if row is None or row.status != "completed":
         return jsonify({"error": "Extraction not found."}), 404
 
-    data = json.loads(row.data)
+    data = load_document(row)
+    if data is None:
+        return jsonify({"error": "Extraction not found."}), 404
     csv_text = _CSV_WRITERS.get(row.doc_type, invoice_to_csv)(data)
     return Response(
         csv_text,
@@ -315,7 +314,9 @@ def download_xlsx(eid):
     if row is None or row.status != "completed":
         return jsonify({"error": "Extraction not found."}), 404
 
-    data = json.loads(row.data)
+    data = load_document(row)
+    if data is None:
+        return jsonify({"error": "Extraction not found."}), 404
     content = document_to_xlsx(row.doc_type, data)
     return Response(
         content,

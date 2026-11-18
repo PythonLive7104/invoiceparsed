@@ -93,6 +93,11 @@ services:
       # Belt and braces: a stale SUPABASE_URL in backend/.env must not pull the
       # app back to a managed database now that DATABASE_URL is authoritative.
       SUPABASE_URL: ""
+      # Alembic owns the schema here, applied by docker-entrypoint.sh before
+      # gunicorn starts. create_all() only ever adds missing tables — it never
+      # adds a column to an existing one — so it must not run against a database
+      # holding real rows. See DEPLOY.md.
+      AUTO_CREATE_TABLES: "false"
     restart: unless-stopped
     expose:
       - "5000"

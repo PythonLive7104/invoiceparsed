@@ -21,7 +21,7 @@ import {
   AlertCircle,
 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
-import { cn, formatMoney } from "@/lib/utils";
+import { cn, formatMoney, numericInput } from "@/lib/utils.js";
 import { api, apiError, downloadFile } from "@/lib/api";
 import { DocumentViewer } from "@/components/dashboard/DocumentViewer";
 import { LockedActions } from "@/components/dashboard/LockedActions";
@@ -83,9 +83,9 @@ export function ReceiptCard({ invoice: initial, extractionId, fileName, initialS
       line_items: r.line_items.map((li, i) => (i === idx ? { ...li, ...patch } : li)),
     }));
   }
-  function num(v) {
-    return v === "" ? null : Number(v);
-  }
+  // Keeps the typed text as-is; see numericInput in lib/utils.js for why this
+  // must not go through Number().
+  const num = numericInput;
 
   function copyJson() {
     navigator.clipboard.writeText(JSON.stringify(receipt, null, 2));

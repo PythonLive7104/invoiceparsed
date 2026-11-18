@@ -4,13 +4,13 @@ Extracted from routes/extract_routes.py so the anonymous demo + claim flow
 (routes/demo_routes.py) stores files and denormalizes fields exactly the same
 way a signed-in extraction does.
 """
-import json
 import mimetypes
 import os
 
 from werkzeug.utils import secure_filename
 
 from config import Config
+from json_provider import dumps as json_dumps
 from invoice_schema import normalize as normalize_invoice
 from receipt_schema import normalize as normalize_receipt
 from statement_schema import normalize as normalize_statement
@@ -24,6 +24,34 @@ NORMALIZERS = {
 
 def normalize_for(doc_type: str):
     return NORMALIZERS.get(doc_type, normalize_invoice)
+
+
+def load_document(row) -> dict | None:
+    """Read an extraction's stored payload back as a normalized document.
+
+    The payload is persisted with money as decimal *strings* (see
+    json_provider.py), so a bare json.loads() hands callers text where they
+    expect amounts. Re-normalizing on read turns those back into Decimal, which
+    matters in two places:
+
+      * the spreadsheet exporters, which must write numbers Excel can total
+        rather than text that merely looks like a number;
+      * rows written before money became Decimal, whose floats are converted
+        on the way out instead of needing a data migration.
+
+    normalize() is idempotent, so running it on already-normalized data is a
+    no-op. Returns None if the payload is unreadable, which the callers report
+    as a missing extraction rather than a 500.
+    """
+    import json
+
+    try:
+        data = json.loads(row.data)
+    except (json.JSONDecodeError, TypeError):
+        return None
+    if not isinstance(data, dict):
+        return None
+    return normalize_for(row.doc_type)(data)
 
 
 # ─── Original-file storage ───────────────────────────────────────────────────
@@ -78,4 +106,4 @@ def apply_headline_fields(row, data: dict) -> None:
         row.due_date = data.get("due_date")
         row.total = data.get("total")
     row.currency = data.get("currency")
-    row.data = json.dumps(data)
+    row.data = json_dumps(data)

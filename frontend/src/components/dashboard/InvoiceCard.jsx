@@ -20,7 +20,7 @@ import {
   AlertCircle,
 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
-import { cn, formatMoney } from "@/lib/utils";
+import { cn, formatMoney, numericInput } from "@/lib/utils.js";
 import { api, apiError, downloadFile } from "@/lib/api";
 import { DocumentViewer } from "@/components/dashboard/DocumentViewer";
 import { LockedActions } from "@/components/dashboard/LockedActions";
@@ -294,17 +294,17 @@ export function InvoiceCard({ invoice: initial, extractionId, fileName, initialS
                       </td>
                       <td className="px-3 py-2.5 text-right tabular-nums">
                         <CellInput editing={editing} numeric align="right" value={li.quantity ?? ""}
-                          onChange={(v) => updateLine(idx, { quantity: v === "" ? null : Number(v) })}
+                          onChange={(v) => updateLine(idx, { quantity: numericInput(v) })}
                           display={li.quantity ?? "—"} />
                       </td>
                       <td className="px-3 py-2.5 text-right tabular-nums">
                         <CellInput editing={editing} numeric align="right" value={li.unit_price ?? ""}
-                          onChange={(v) => updateLine(idx, { unit_price: v === "" ? null : Number(v) })}
+                          onChange={(v) => updateLine(idx, { unit_price: numericInput(v) })}
                           display={formatMoney(li.unit_price, currency)} />
                       </td>
                       <td className="px-4 py-2.5 text-right font-medium tabular-nums">
                         <CellInput editing={editing} numeric align="right" value={li.amount ?? ""}
-                          onChange={(v) => updateLine(idx, { amount: v === "" ? null : Number(v) })}
+                          onChange={(v) => updateLine(idx, { amount: numericInput(v) })}
                           display={formatMoney(li.amount, currency)} />
                       </td>
                       {editing && (

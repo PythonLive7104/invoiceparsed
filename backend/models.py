@@ -1,8 +1,10 @@
 """SQLAlchemy models: User and Extraction."""
 import uuid
 from datetime import datetime
+from decimal import Decimal
 
 from extensions import db
+from money import as_json
 
 
 def _uuid() -> str:
@@ -74,7 +76,11 @@ class Extraction(db.Model):
     invoice_date = db.Column(db.String(40), nullable=True)
     due_date = db.Column(db.String(40), nullable=True)
     currency = db.Column(db.String(10), nullable=True)
-    total = db.Column(db.Float, nullable=True)
+    # Numeric, never Float: binary floating point cannot represent most
+    # decimal fractions, so a Float column silently disagrees with the figure
+    # printed on the document. 4 places leaves headroom for currencies with
+    # more than 2 minor units. See money.py.
+    total = db.Column(db.Numeric(18, 4), nullable=True)
 
     # Full structured payload (the invoice JSON) stored as text
     data = db.Column(db.Text, nullable=False)
@@ -191,7 +197,9 @@ class Payment(db.Model):
             "id": self.id,
             "plan": self.plan,
             # Paystack reports amounts in cents/kobo; expose major units for display.
-            "amount": (self.amount / 100) if self.amount is not None else None,
+            # Minor units -> major units as an exact 2-place decimal string,
+            # via the same helper as every other amount so the whole API agrees.
+            "amount": as_json(Decimal(self.amount) / 100) if self.amount is not None else None,
             "currency": self.currency,
             "status": self.status,
             "eventType": self.event_type,

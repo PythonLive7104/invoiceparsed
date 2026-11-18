@@ -3,6 +3,8 @@
 `STATEMENT_JSON_SCHEMA` is handed to OpenAI's structured-output API; `normalize`
 coerces model output into a predictable shape with all keys present.
 """
+from money import money as _money
+from money import rate as _rate
 
 STATEMENT_JSON_SCHEMA = {
     "type": "object",
@@ -75,13 +77,6 @@ CONFIDENCE_FIELDS = (
 )
 
 
-def _num(value):
-    if value is None or value == "":
-        return None
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return None
 
 
 def _conf_value(value):
@@ -106,17 +101,17 @@ def normalize(raw: dict) -> dict:
         "currency": raw.get("currency"),
         "period_start": raw.get("period_start"),
         "period_end": raw.get("period_end"),
-        "opening_balance": _num(raw.get("opening_balance")),
-        "closing_balance": _num(raw.get("closing_balance")),
-        "total_debit": _num(raw.get("total_debit")),
-        "total_credit": _num(raw.get("total_credit")),
+        "opening_balance": _money(raw.get("opening_balance")),
+        "closing_balance": _money(raw.get("closing_balance")),
+        "total_debit": _money(raw.get("total_debit")),
+        "total_credit": _money(raw.get("total_credit")),
         "transactions": [
             {
                 "date": (t or {}).get("date"),
                 "description": (t or {}).get("description") or "",
-                "debit": _num((t or {}).get("debit")),
-                "credit": _num((t or {}).get("credit")),
-                "balance": _num((t or {}).get("balance")),
+                "debit": _money((t or {}).get("debit")),
+                "credit": _money((t or {}).get("credit")),
+                "balance": _money((t or {}).get("balance")),
                 "reference": (t or {}).get("reference"),
             }
             for t in txns
