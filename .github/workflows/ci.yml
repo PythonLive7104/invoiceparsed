@@ -90,15 +90,14 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
 
       - name: Install dependencies
-        # --legacy-peer-deps matches frontend/Dockerfile, and is currently
-        # REQUIRED rather than optional: package.json pins vite ^8 while
-        # @vitejs/plugin-react is 4.x, which declares support only up to vite 7.
-        # A plain `npm ci` fails with ERESOLVE on the committed lockfile, so a
-        # fresh clone cannot install without this flag. The build itself is
-        # unaffected. The real fix is upgrading @vitejs/plugin-react to 6.x
-        # (which supports vite 8) and dropping the flag here and in the
-        # Dockerfile together.
-        run: npm ci --legacy-peer-deps
+        # A plain `npm ci` works again. It used to need --legacy-peer-deps
+        # because package.json pinned vite ^8 against @vitejs/plugin-react 4.x,
+        # which declares support only to vite 7 — a fresh clone could not
+        # install at all. plugin-react is now 6.x, which supports vite 8.
+        run: npm ci
+
+      - name: Tests
+        run: npm test
 
       - name: Build
         # Runs the sitemap generation, the Vite build and the prerender pass, so

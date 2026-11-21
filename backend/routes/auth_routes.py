@@ -208,11 +208,34 @@ def forgot_password():
     email = (data.get("email") or "").strip().lower()
 
     user = User.query.filter_by(email=email).first()
-    # Only email users with a local password can reset; Google-only accounts skip.
-    if user and user.password_hash:
+    log = current_app.logger
+
+    if user is None:
+        # Logged, because "no email arrived" is indistinguishable from the
+        # three cases below at the client, and this is the only record of which
+        # one actually happened.
+        log.info("Password reset requested for an address with no account.")
+    elif not user.password_hash:
+        # A Google-only account has no local password to reset. Nothing is sent,
+        # which from the outside looks exactly like a broken mail setup.
+        log.info(
+            "Password reset requested for user_id=%s, which is a Google-only "
+            "account with no local password - nothing to reset.", user.id,
+        )
+    else:
         token = issue_reset_token(user)
         link = f'{current_app.config["APP_URL"].rstrip("/")}/reset-password?token={token}'
-        send_password_reset(user.email, link, user.name)
+        if send_password_reset(user.email, link, user.name):
+            log.info("Password reset email sent to user_id=%s.", user.id)
+        else:
+            log.error(
+                "Password reset email FAILED for user_id=%s. The response to "
+                "the client is still a success, so this log is the only signal. "
+                "Check RESEND_API_KEY is set ON THE SERVER and that RESEND_FROM "
+                "uses a verified domain (the onboarding@resend.dev sandbox "
+                "sender is refused for everyone but the account owner).",
+                user.id,
+            )
 
     # Always respond the same way — don't reveal whether the email is registered.
     return jsonify({"success": True})

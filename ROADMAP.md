@@ -204,15 +204,27 @@ Done: `.github/workflows/ci.yml` runs on every push and PR —
 `backend/ruff.toml` selects pyflakes, pycodestyle, import sorting, bugbear,
 pyupgrade, comprehensions, returns and simplify. The baseline is clean.
 
-**Deferred: frontend unit tests.** Blocked on a real dependency conflict rather
-than abandoned — `package.json` pins `vite ^8` while `@vitejs/plugin-react` is
-`4.x`, which declares support only to vite 7. A plain `npm ci` fails with
-ERESOLVE on the committed lockfile (the Dockerfile and now CI both pass
-`--legacy-peer-deps`), and installing Vitest under that flag produced an
-incomplete dependency tree that could not run a single test. The fix is to
-upgrade `@vitejs/plugin-react` to 6.x, which supports vite 8, then drop the flag
-from the Dockerfile and CI together and add Vitest on a sound tree. Doing it
-under the flag would have left a test runner that silently does not work.
+**Frontend install fixed.** `@vitejs/plugin-react` upgraded 4.x → 6.3.0, which
+supports vite 8 (its three extra peers are all optional). The lockfile was
+regenerated. A plain `npm ci` now succeeds, where before it failed with ERESOLVE
+on a fresh clone — so `--legacy-peer-deps` is gone from both `frontend/Dockerfile`
+and CI. Verified by a clean `rm -rf node_modules && npm ci && npm run build`,
+including the prerender pass that executes the app across 24 routes.
+
+**Vitest added** with `frontend/vitest.config.js` and 10 tests pinning the money
+contract — `formatMoney` on exact decimal strings (including a value past 2^53
+where the float form is demonstrably wrong) and `numericInput` never converting
+user input to a float. `npm test` is wired into CI.
+
+*Caveat:* the suite cannot be run from `c:\Users\DELL\Documents\invoiceparsed\frontend`
+on this machine. Vitest fails there at `import { … } from "vitest"` with
+"Cannot read properties of undefined (reading 'config')". It is environmental,
+not a code or dependency problem: the identical tree — same `package.json`,
+same lockfile, same configs — passes when copied to another directory. Ruled
+out: vite/vitest versions, duplicate installs, the config files, ESM mode,
+worker pool, caches, file location and OneDrive. Likely a filesystem or
+security-software interaction with that path. CI runs on Linux and is
+unaffected.
 
 **Also still to do:** eslint (not yet configured).
 

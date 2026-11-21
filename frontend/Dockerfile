@@ -7,7 +7,7 @@ WORKDIR /app
 COPY package*.json ./
 # --legacy-peer-deps: the project pins vite 8 against @vitejs/plugin-react's
 # older peer range (the repo already lives with this).
-RUN npm ci --legacy-peer-deps
+RUN npm ci
 
 COPY . .
 
