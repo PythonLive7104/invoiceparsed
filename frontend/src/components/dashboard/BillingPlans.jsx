@@ -10,8 +10,8 @@ import { useAuth } from "@/lib/auth.jsx";
 import { track, EVENTS } from "@/lib/analytics";
 
 export function BillingPlans() {
-  const { user, refreshUsage } = useAuth();
-  const currentPlan = user?.plan;
+  const { plan, refreshUsage } = useAuth();
+  const currentPlan = plan;
   const [pending, setPending] = useState(null);
   const [live, setLive] = useState(false);
 
@@ -26,7 +26,7 @@ export function BillingPlans() {
     try {
       const { data } = await api.post("/api/billing/checkout", { plan: planId });
       if (data?.url) {
-        // Live mode → hand off to the hosted Paystack checkout.
+        // Live mode → hand off to the hosted Bachs checkout.
         window.location.href = data.url;
         return;
       }
@@ -43,7 +43,7 @@ export function BillingPlans() {
         <div className="flex items-start gap-2.5 rounded-xl border border-brand-400/20 bg-brand-500/[0.06] px-4 py-3 text-sm text-brand-200">
           <Info size={16} className="mt-0.5 shrink-0" />
           <span>
-            Demo mode — plan changes apply instantly. In production this opens a secure Paystack
+            Demo mode — plan changes apply instantly. In production this opens a secure Bachs
             checkout.
           </span>
         </div>

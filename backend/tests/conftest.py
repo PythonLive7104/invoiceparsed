@@ -20,7 +20,11 @@ class TestConfig(Config):
     JWT_SECRET = "test-secret-key"
     OPENAI_API_KEY = "test-openai-key"
     RESEND_API_KEY = ""  # _send() short-circuits when empty
-    PAYSTACK_SECRET_KEY = ""
+    BACHS_SECRET_KEY = ""
+    BACHS_WEBHOOK_SECRET = ""
+    # The demo-billing tests exercise unpaid plan switching, which is now
+    # opt-in. test_billing covers what happens with it off.
+    BILLING_DEMO_MODE = True
     APP_URL = "http://localhost:5173"
     FRONTEND_ORIGIN = "http://localhost:5173"
 
@@ -37,17 +41,13 @@ def app(tmp_path, monkeypatch):
     monkeypatch.setattr(ar, "send_verification", lambda *a, **k: True)
     monkeypatch.setattr(ar, "send_password_reset", lambda *a, **k: True)
 
-    # Keep tests hermetic regardless of the developer's .env: billing reads the
-    # module-level Config, so default it to demo mode (specific billing tests
-    # override this). The plan codes come from os.getenv, so clear them too.
-    monkeypatch.setattr("config.Config.PAYSTACK_SECRET_KEY", "", raising=False)
-    for env_key in ("PAYSTACK_PLAN_STARTER", "PAYSTACK_PLAN_PRO", "PAYSTACK_PLAN_BUSINESS"):
-        monkeypatch.delenv(env_key, raising=False)
-
-    # Plan codes are provisioned lazily and cached in the module; don't let one
-    # test's plans leak into the next.
-    import billing
-    billing.reset_plan_cache()
+    # Keep tests hermetic regardless of the developer's .env: config.py calls
+    # load_dotenv(), so a real BACHS_SECRET_KEY (a live key that moves real
+    # money) would otherwise make bachs.is_configured() true during the run and
+    # in principle let a test reach the live API. Tests that want the provider
+    # set these explicitly.
+    monkeypatch.setattr("config.Config.BACHS_SECRET_KEY", "", raising=False)
+    monkeypatch.setattr("config.Config.BACHS_WEBHOOK_SECRET", "", raising=False)
 
     from app import create_app
     from extensions import db
@@ -65,28 +65,83 @@ def client(app):
 
 
 # ─── Helpers ─────────────────────────────────────────────────────────────────
-def make_user(app, email="user@example.com", plan="free", verified=True, password="password123"):
-    """Create a user directly in the DB and return it (detached id/email/plan)."""
+def make_user(app, email="user@example.com", plan="free", verified=True,
+              password="password123", role=None):
+    """Create a user with a personal organization, and return both.
+
+    `plan` is set on the ORGANIZATION, which is where it lives — a team shares
+    one allowance. The returned dict keeps a "plan" key for convenience, but it
+    reflects the organization.
+    """
+    from auth import hash_password
     from extensions import db
     from models import User
-    from auth import hash_password
+    from tenancy import ensure_personal_organization
 
     with app.app_context():
         u = User(
             email=email,
             name="Test",
             password_hash=hash_password(password),
-            plan=plan,
             email_verified=verified,
         )
         db.session.add(u)
+        db.session.flush()
+        org = ensure_personal_organization(u, plan=plan)
+        if role:
+            from models import OrganizationMembership
+            membership = OrganizationMembership.query.filter_by(
+                user_id=u.id, organization_id=org.id
+            ).first()
+            membership.role = role
         db.session.commit()
-        return {"id": u.id, "email": u.email, "plan": u.plan}
+        return {
+            "id": u.id,
+            "email": u.email,
+            "plan": org.plan,
+            "organization_id": org.id,
+        }
+
+
+def make_org(app, owner, name="Shared org", plan="free"):
+    """Create a second, non-personal organization owned by `owner`."""
+    from extensions import db
+    from models import Organization, OrganizationMembership
+    from roles import OWNER
+
+    with app.app_context():
+        org = Organization(name=name, is_personal=False, plan=plan)
+        db.session.add(org)
+        db.session.flush()
+        db.session.add(OrganizationMembership(
+            organization_id=org.id, user_id=owner["id"], role=OWNER,
+        ))
+        db.session.commit()
+        return {"id": org.id, "plan": org.plan, "name": org.name}
+
+
+def join_org(app, org, user, role):
+    """Add `user` to `org` with `role`."""
+    from extensions import db
+    from models import OrganizationMembership
+
+    with app.app_context():
+        db.session.add(OrganizationMembership(
+            organization_id=org["id"], user_id=user["id"], role=role,
+        ))
+        db.session.commit()
+
+
+def org_header(app, user, org):
+    """Auth header that acts as `org` rather than the user's personal one."""
+    headers = auth_header(app, user)
+    headers["X-Organization-Id"] = org["id"]
+    return headers
 
 
 def auth_header(app, user):
-    from models import User
     from auth import issue_token
+    from models import User
 
     with app.app_context():
         u = User.query.get(user["id"])

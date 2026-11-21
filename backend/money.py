@@ -18,7 +18,7 @@ Two rules keep this honest:
    steps, so intermediate sums keep full precision.
 """
 import re
-from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
+from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 
 # Monetary values are stored and compared to 2 decimal places. Numeric(18, 4) in
 # the database leaves headroom for currencies with more minor units and for

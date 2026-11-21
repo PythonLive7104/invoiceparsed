@@ -25,8 +25,8 @@ from urllib.parse import urlsplit
 import httpx
 
 from config import Config
-from json_provider import dumps as json_dumps
 from extensions import db
+from json_provider import dumps as json_dumps
 from models import Webhook
 
 logger = logging.getLogger(__name__)
@@ -175,11 +175,18 @@ def deliver(webhook: Webhook, event: str, data: dict, *, sleep=time.sleep, max_a
     return status
 
 
-def dispatch(app, user_id: str, event: str, data: dict) -> None:
-    """Fire `event` to all of a user's active webhooks, in a background thread."""
+def dispatch(app, organization_id: str, event: str, data: dict) -> None:
+    """Fire `event` to an organization's active webhooks, in a background thread.
+
+    Scoped by organization rather than by the uploading user: a webhook belongs
+    to the organization, so a document uploaded by one member must still notify
+    the endpoints the team configured.
+    """
     def run():
         with app.app_context():
-            hooks = Webhook.query.filter_by(user_id=user_id, active=True).all()
+            hooks = Webhook.query.filter_by(
+                organization_id=organization_id, active=True
+            ).all()
             for hook in hooks:
                 deliver(hook, event, data)
 

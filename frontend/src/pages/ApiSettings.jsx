@@ -24,8 +24,8 @@ const API_BASE = import.meta.env.VITE_API_URL ?? "http://localhost:5000";
 const API_URL = API_BASE || (typeof window !== "undefined" ? window.location.origin : "");
 
 export default function ApiSettings() {
-  const { user } = useAuth();
-  const isPro = planAllows(user?.plan, "api");
+  const { plan } = useAuth();
+  const isPro = planAllows(plan, "api");
 
   return (
     <div className="space-y-8">

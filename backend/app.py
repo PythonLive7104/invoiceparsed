@@ -14,9 +14,9 @@ from werkzeug.exceptions import RequestEntityTooLarge
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 from config import Config
-from json_provider import DecimalJSONProvider
 from extensions import db, limiter, migrate
-from plans import PLANS, PLAN_ORDER
+from json_provider import DecimalJSONProvider
+from plans import PLAN_ORDER, PLANS
 from routes import (
     auth_bp,
     billing_bp,

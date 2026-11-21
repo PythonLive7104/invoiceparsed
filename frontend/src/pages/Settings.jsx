@@ -16,7 +16,7 @@ import { useAuth, apiError } from "@/lib/auth.jsx";
 import { formatDate } from "@/lib/utils";
 
 export default function Settings() {
-  const { user } = useAuth();
+  const { user, plan } = useAuth();
   return (
     <div className="space-y-8">
       <header>
@@ -219,7 +219,7 @@ function PlanCard() {
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <div className="text-sm text-slate-300">
-            Current plan: <span className="font-semibold capitalize text-white">{user?.plan}</span>
+            Current plan: <span className="font-semibold capitalize text-white">{plan}</span>
           </div>
           {usage && (
             <div className="mt-1 text-xs text-slate-500">

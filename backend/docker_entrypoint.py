@@ -37,6 +37,7 @@ def main() -> int:
     # execvp replaces this process, so gunicorn becomes PID 1 and receives
     # Docker's stop signals directly instead of through a Python parent.
     os.execvp(argv[0], argv)
+    return 0  # unreachable: execvp either replaces the process or raises
 
 
 if __name__ == "__main__":

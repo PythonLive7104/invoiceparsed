@@ -8,6 +8,7 @@ adopts the extraction instead of making them upload it again.
 Abuse control is two-layer: a durable per-IP lifetime cap (DemoUsage, keyed by a
 salted hash of the address) plus a burst rate limit on the endpoint.
 """
+import contextlib
 import hashlib
 import json
 import os
@@ -22,6 +23,7 @@ from documents import apply_headline_fields, extraction_dir, list_files, save_fi
 from extensions import db, limiter
 from models import DemoExtraction, DemoUsage, Extraction
 from openai_service import extract_document
+from tenancy import current_organization
 from usage import usage_for
 
 demo_bp = Blueprint("demo", __name__, url_prefix="/api/demo")
@@ -190,6 +192,7 @@ def claim():
         return jsonify({"claimed": False, "reason": "not_found"}), 200
 
     record = Extraction(
+        organization_id=current_organization().id,
         user_id=g.user.id,
         doc_type=row.doc_type,
         file_name=row.file_name,
@@ -207,10 +210,10 @@ def claim():
     # viewer works on it exactly like any other upload.
     src, dst = extraction_dir(row.id), extraction_dir(record.id)
     if os.path.isdir(src) and not os.path.exists(dst):
-        try:
+        # The record is still valid without the original file, so a failed
+        # move must not fail the claim.
+        with contextlib.suppress(OSError):
             shutil.move(src, dst)
-        except OSError:
-            pass  # the record is still valid without the original file
 
     return jsonify({
         "claimed": True,
@@ -221,5 +224,5 @@ def claim():
             "invoice": json.loads(row.data),
             "files": list_files(record.id),
         },
-        "usage": usage_for(g.user),
+        "usage": usage_for(current_organization()),
     })

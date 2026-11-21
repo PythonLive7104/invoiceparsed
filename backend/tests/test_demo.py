@@ -2,7 +2,7 @@
 import io
 import json
 
-from tests.conftest import make_user, auth_header
+from tests.conftest import auth_header, make_user
 
 FAKE_INVOICE = {
     "vendor": {"name": "Acme", "address": None, "email": None},
@@ -192,6 +192,7 @@ def test_expired_demos_are_purged(client, app, monkeypatch):
     token = _post(client).get_json()["claimToken"]
 
     from datetime import datetime, timedelta
+
     from extensions import db
     from models import DemoExtraction
     with app.app_context():

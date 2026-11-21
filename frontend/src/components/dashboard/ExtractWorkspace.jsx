@@ -37,11 +37,11 @@ const MAX = 10 * 1024 * 1024;
 const MAX_FILES = 15;
 
 export function ExtractWorkspace() {
-  const { user, usage, refreshUsage, setUsage } = useAuth();
-  const canBatch = planAllows(user?.plan, "batch");
-  const canMultiPage = planAllows(user?.plan, "multiPage");
+  const { user, plan, usage, refreshUsage, setUsage } = useAuth();
+  const canBatch = planAllows(plan, "batch");
+  const canMultiPage = planAllows(plan, "multiPage");
   const canMulti = canBatch || canMultiPage;
-  const canStatements = planAllows(user?.plan, "statements");
+  const canStatements = planAllows(plan, "statements");
 
   const [status, setStatus] = useState("idle"); // idle|selected|processing|done|error
   const [files, setFiles] = useState([]);
@@ -119,7 +119,7 @@ export function ExtractWorkspace() {
     track(EVENTS.EXTRACT_STARTED, {
       docType,
       mode: isCombine ? "combine" : "single",
-      plan: user?.plan || "free",
+      plan: plan || "free",
     });
     try {
       const fd = new FormData();
@@ -136,7 +136,7 @@ export function ExtractWorkspace() {
       track(EVENTS.EXTRACT_COMPLETED, {
         docType: data.docType,
         mode: isCombine ? "combine" : "single",
-        plan: user?.plan || "free",
+        plan: plan || "free",
       });
     } catch (err) {
       if (err?.response?.data?.usage) setUsage(err.response.data.usage);
@@ -155,7 +155,7 @@ export function ExtractWorkspace() {
     track(EVENTS.EXTRACT_STARTED, {
       docType,
       mode: "batch",
-      plan: user?.plan || "free",
+      plan: plan || "free",
       count: files.length,
     });
     for (let i = 0; i < files.length; i++) {
@@ -185,7 +185,7 @@ export function ExtractWorkspace() {
       }
     }
     setStatus("done");
-    track(EVENTS.EXTRACT_COMPLETED, { docType, mode: "batch", plan: user?.plan || "free" });
+    track(EVENTS.EXTRACT_COMPLETED, { docType, mode: "batch", plan: plan || "free" });
     refreshUsage();
   }
 

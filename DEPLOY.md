@@ -40,7 +40,7 @@ usermod -aG docker $USER
 ```bash
 git clone <your-repo-url> invoiceparsed && cd invoiceparsed
 
-# App secrets (OpenAI, JWT, Paystack, Resend)
+# App secrets (OpenAI, JWT, Bachs, Resend)
 cp backend/.env.example backend/.env
 nano backend/.env
 
@@ -60,7 +60,7 @@ Set these for production in `backend/.env`:
 | `APP_URL` | `https://invoiceparsed.com` (used in email links) |
 | `FRONTEND_ORIGIN` | `https://invoiceparsed.com` (CORS allow-list) |
 | `GOOGLE_CLIENT_ID` | your Google OAuth client id (optional) |
-| `PAYSTACK_*` | leave blank until you have a Paystack account (billing runs in demo mode) |
+| `BACHS_*` | leave blank until you have a Bachs account; plan changes are then refused unless `BILLING_DEMO_MODE=true` |
 
 > The frontend is built **same-origin** (`VITE_API_URL=""`), so the browser calls
 > `/api` on your domain and nginx proxies it to the API — no separate API
@@ -142,19 +142,36 @@ Create a project at sentry.io (one "Python/Flask" + one "React"), then:
 
 Both stay disabled when their DSN is blank, so dev/tests never report.
 
-## 6. Paystack (when ready)
+## 6. Bachs payments (when ready)
 
-Add `PAYSTACK_SECRET_KEY` to `backend/.env` and `docker compose up -d`. The
-recurring monthly plans (Starter / Pro / Business) are created in your Paystack
-account automatically, from the prices in `backend/plans.py`, the first time each
-tier is bought — there is nothing to set up in the dashboard.
+Add to `backend/.env` and `docker compose up -d --build`:
 
-In Paystack → Settings → API Keys & Webhooks, set the **webhook URL** to
-`https://invoiceparsed.com/api/billing/webhook`. Paystack signs it with your
-secret key, so there is nothing else to configure. Until then, billing stays in
-instant-switch demo mode.
+```env
+BACHS_SECRET_KEY=sk_live_...           # sk_sandbox_... while testing
+BACHS_API_BASE=https://api.bachs.io    # https://sandbox-api.bachs.io while testing
+BACHS_WEBHOOK_SECRET=whsec_...
+BACHS_PRODUCT_STARTER=prod_...
+BACHS_PRODUCT_PRO=prod_...
+BACHS_PRODUCT_BUSINESS=prod_...
+```
 
----
+Bachs has no "plan" objects, so each paid tier needs a **recurring product**
+created once in the Bachs dashboard with a monthly `billing_cycle`. Paste the
+`prod_...` ids above. Subscriptions currently bill USD cards only.
+
+In the Bachs Developer Portal → Webhooks, add the endpoint:
+
+`https://invoiceparsed.com/api/billing/webhook`
+
+That is the apex domain, not an `api.` subdomain — nginx proxies `/api/` on the
+same host that serves the app. Then copy that endpoint's **signing secret** into
+`BACHS_WEBHOOK_SECRET`; reveal it first, because copying the masked value makes
+every delivery fail signature verification. It is per-endpoint and is NOT the
+API key, so sandbox and live need separate secrets.
+
+A key only works against its own environment: an `sk_sandbox_` key with the live
+API base returns 401. `APP_URL` must be a public https URL, because Bachs
+refuses a `success_url` on localhost even in sandbox.
 
 ## Notes / sizing
 

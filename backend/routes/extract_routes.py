@@ -10,7 +10,6 @@ from flask import Blueprint, Response, current_app, g, jsonify, request, send_fi
 from auth import api_or_login_required, rate_limit_key
 from config import Config
 from csv_util import invoice_to_csv, receipt_to_csv, statement_to_csv
-from xlsx_util import document_to_xlsx
 from documents import (
     apply_headline_fields,
     extraction_dir,
@@ -23,8 +22,10 @@ from extensions import db, limiter
 from models import Extraction
 from openai_service import extract_document
 from plans import plan_allows
+from tenancy import current_organization, scoped
 from usage import usage_for
 from webhooks import dispatch
+from xlsx_util import document_to_xlsx
 
 extract_bp = Blueprint("extract", __name__, url_prefix="/api")
 
@@ -64,9 +65,10 @@ def _serialize(row: Extraction, data) -> dict:
 @api_or_login_required
 def extract():
     user = g.user
+    organization = current_organization()
 
-    # Enforce plan limits before spending an API call.
-    usage = usage_for(user)
+    # Plan limits are the ORGANIZATION's, so a team shares one allowance.
+    usage = usage_for(organization)
     if usage["atLimit"]:
         return (
             jsonify({
@@ -106,7 +108,7 @@ def extract():
     # Bank statements are a Business-plan capability with their own monthly
     # allowance (they're far costlier to extract than invoices/receipts).
     if doc_type == "statement":
-        if not plan_allows(user.plan, "statements"):
+        if not plan_allows(organization.plan, "statements"):
             return (
                 jsonify({
                     "error": "Bank statement extraction is a Business-plan feature.",
@@ -130,7 +132,7 @@ def extract():
 
     mode = (request.form.get("mode") or "single").lower()
 
-    if mode == "batch" and not plan_allows(user.plan, "batch"):
+    if mode == "batch" and not plan_allows(organization.plan, "batch"):
         return (
             jsonify({
                 "error": "Batch upload is available on paid plans. Upgrade to process invoices in bulk.",
@@ -140,7 +142,7 @@ def extract():
             402,
         )
 
-    if len(files) > 1 and not plan_allows(user.plan, "multiPage"):
+    if len(files) > 1 and not plan_allows(organization.plan, "multiPage"):
         return (
             jsonify({
                 "error": "Multi-page invoices are available on paid plans. Upgrade to combine pages.",
@@ -173,6 +175,7 @@ def extract():
     # Create a "processing" record up front so the job is tracked in History even
     # if the user navigates away during a long extraction (e.g. a big statement).
     record = Extraction(
+        organization_id=organization.id,
         user_id=user.id,
         doc_type=doc_type,
         file_name=display_name,
@@ -202,19 +205,20 @@ def extract():
     # Fire webhooks (background thread; never blocks the response).
     dispatch(
         current_app._get_current_object(),
-        user.id,
+        organization.id,
         "extraction.completed",
         payload,
     )
 
-    return jsonify({**payload, "usage": usage_for(user)})
+    return jsonify({**payload, "usage": usage_for(organization)})
 
 
 @extract_bp.get("/extractions")
 @api_or_login_required
 def list_extractions():
     rows = (
-        Extraction.query.filter_by(user_id=g.user.id, deleted_at=None)
+        scoped(Extraction)
+        .filter(Extraction.deleted_at.is_(None))
         .order_by(Extraction.created_at.desc())
         .limit(300)
         .all()
@@ -225,7 +229,7 @@ def list_extractions():
 @extract_bp.get("/extractions/<eid>")
 @api_or_login_required
 def get_extraction(eid):
-    row = Extraction.query.filter_by(id=eid, user_id=g.user.id, deleted_at=None).first()
+    row = scoped(Extraction).filter(Extraction.id == eid, Extraction.deleted_at.is_(None)).first()
     if row is None:
         return jsonify({"error": "Extraction not found."}), 404
     return jsonify(_serialize(row, load_document(row)))
@@ -235,7 +239,7 @@ def get_extraction(eid):
 @api_or_login_required
 def update_extraction(eid):
     """Persist user (or API) edits to an extraction's fields."""
-    row = Extraction.query.filter_by(id=eid, user_id=g.user.id, deleted_at=None).first()
+    row = scoped(Extraction).filter(Extraction.id == eid, Extraction.deleted_at.is_(None)).first()
     if row is None or row.status != "completed":
         return jsonify({"error": "Extraction not found."}), 404
 
@@ -253,7 +257,7 @@ def update_extraction(eid):
 @extract_bp.delete("/extractions/<eid>")
 @api_or_login_required
 def delete_extraction(eid):
-    row = Extraction.query.filter_by(id=eid, user_id=g.user.id, deleted_at=None).first()
+    row = scoped(Extraction).filter(Extraction.id == eid, Extraction.deleted_at.is_(None)).first()
     if row is None:
         return jsonify({"error": "Extraction not found."}), 404
     # Soft delete: keep the (now file-less) row so it still counts toward monthly
@@ -268,7 +272,7 @@ def delete_extraction(eid):
 @extract_bp.get("/extractions/<eid>/files")
 @api_or_login_required
 def list_extraction_files(eid):
-    row = Extraction.query.filter_by(id=eid, user_id=g.user.id, deleted_at=None).first()
+    row = scoped(Extraction).filter(Extraction.id == eid, Extraction.deleted_at.is_(None)).first()
     if row is None:
         return jsonify({"error": "Extraction not found."}), 404
     return jsonify({"files": list_files(eid)})
@@ -277,7 +281,7 @@ def list_extraction_files(eid):
 @extract_bp.get("/extractions/<eid>/file/<int:index>")
 @api_or_login_required
 def get_extraction_file(eid, index):
-    row = Extraction.query.filter_by(id=eid, user_id=g.user.id, deleted_at=None).first()
+    row = scoped(Extraction).filter(Extraction.id == eid, Extraction.deleted_at.is_(None)).first()
     if row is None:
         return jsonify({"error": "Extraction not found."}), 404
     d = extraction_dir(eid)
@@ -292,7 +296,7 @@ def get_extraction_file(eid, index):
 @extract_bp.get("/extractions/<eid>/csv")
 @api_or_login_required
 def download_csv(eid):
-    row = Extraction.query.filter_by(id=eid, user_id=g.user.id, deleted_at=None).first()
+    row = scoped(Extraction).filter(Extraction.id == eid, Extraction.deleted_at.is_(None)).first()
     if row is None or row.status != "completed":
         return jsonify({"error": "Extraction not found."}), 404
 
@@ -310,7 +314,7 @@ def download_csv(eid):
 @extract_bp.get("/extractions/<eid>/xlsx")
 @api_or_login_required
 def download_xlsx(eid):
-    row = Extraction.query.filter_by(id=eid, user_id=g.user.id, deleted_at=None).first()
+    row = scoped(Extraction).filter(Extraction.id == eid, Extraction.deleted_at.is_(None)).first()
     if row is None or row.status != "completed":
         return jsonify({"error": "Extraction not found."}), 404
 

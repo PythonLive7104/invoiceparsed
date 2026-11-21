@@ -1,5 +1,6 @@
 """Application configuration, loaded from environment variables (.env)."""
 import os
+
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -112,20 +113,40 @@ class Config:
     SENTRY_ENVIRONMENT = os.getenv("SENTRY_ENVIRONMENT", "production")
     SENTRY_TRACES_SAMPLE_RATE = float(os.getenv("SENTRY_TRACES_SAMPLE_RATE", "0.0"))
 
-    # Paystack. Leave PAYSTACK_SECRET_KEY blank to run billing in demo mode (plan
-    # changes apply instantly, no real payment). Set all values for production.
-    # The same secret key signs webhooks (HMAC-SHA512), so there is no separate
-    # webhook secret. Use the sk_test_… key against test mode.
-    PAYSTACK_SECRET_KEY = os.getenv("PAYSTACK_SECRET_KEY", "")
-    PAYSTACK_PUBLIC_KEY = os.getenv("PAYSTACK_PUBLIC_KEY", "")
-    PAYSTACK_API_BASE = os.getenv("PAYSTACK_API_BASE", "https://api.paystack.co")
-    # Currency the subscription plans are billed in. Changing this after plans have
-    # been provisioned makes the app provision a fresh set in the new currency.
-    PAYSTACK_CURRENCY = os.getenv("PAYSTACK_CURRENCY", "USD")
-    # Paystack plans are named "<prefix> <plan name>" (e.g. "InvoiceParsed Pro") —
-    # this is what the customer sees on the checkout page and their card statement
-    # reference. It also identifies our plans on a shared Paystack account.
-    PAYSTACK_PLAN_PREFIX = os.getenv("PAYSTACK_PLAN_PREFIX", "InvoiceParsed")
+    # Instant, unpaid plan switching for local development and the hosted demo.
+    #
+    # MUST be opt-in. This used to be inferred from "no payment provider is
+    # configured", which conflated a deliberate dev setup with a production
+    # misconfiguration: removing or rotating out a provider key silently turned
+    # the billing endpoints into a free upgrade to any plan. Defaulting to false
+    # means a missing provider now fails closed - plan changes are refused -
+    # rather than giving the product away.
+    BILLING_DEMO_MODE = os.getenv("BILLING_DEMO_MODE", "false").lower() == "true"
+
+    # ─── Bachs (payment provider) ────────────────────────────────────────────
+    # Leave BACHS_SECRET_KEY blank to disable. Differs from Paystack in three
+    # ways that matter: webhooks are signed with a SEPARATE per-endpoint secret
+    # (not the API key), amounts are decimal strings in major units (not minor
+    # units), and there is no "plan" object — a recurring product id stands in
+    # for a plan code.
+    BACHS_SECRET_KEY = os.getenv("BACHS_SECRET_KEY", "")
+    # From Developer Portal > Webhooks > <endpoint> > Signing secret. Without it
+    # deliveries cannot be verified and are refused.
+    BACHS_WEBHOOK_SECRET = os.getenv("BACHS_WEBHOOK_SECRET", "")
+    # Live is https://api.bachs.io; sandbox is https://sandbox-api.bachs.io. A
+    # key only works against its own environment, so these must agree: an
+    # sk_sandbox_ key against the live base URL returns 401.
+    BACHS_API_BASE = os.getenv("BACHS_API_BASE", "https://api.bachs.io")
+    # Replay window for webhook timestamps, in seconds. Bachs' own samples use
+    # 300; deliveries outside the window are refused.
+    BACHS_WEBHOOK_TOLERANCE = int(os.getenv("BACHS_WEBHOOK_TOLERANCE", "300"))
+    # Recurring product ids, one per paid tier (Bachs has no plan codes). Create
+    # them once in the dashboard with a monthly billing_cycle.
+    BACHS_PRODUCTS = {
+        "starter": os.getenv("BACHS_PRODUCT_STARTER", ""),
+        "pro": os.getenv("BACHS_PRODUCT_PRO", ""),
+        "business": os.getenv("BACHS_PRODUCT_BUSINESS", ""),
+    }
 
     # Uploads
     MAX_CONTENT_LENGTH = 64 * 1024 * 1024  # request body cap (allows several pages)

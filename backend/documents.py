@@ -10,8 +10,8 @@ import os
 from werkzeug.utils import secure_filename
 
 from config import Config
-from json_provider import dumps as json_dumps
 from invoice_schema import normalize as normalize_invoice
+from json_provider import dumps as json_dumps
 from receipt_schema import normalize as normalize_receipt
 from statement_schema import normalize as normalize_statement
 

@@ -4,7 +4,6 @@ import re
 from flask import Blueprint, current_app, jsonify, request
 
 import support_kb
-from config import Config
 from emails import send_contact
 from extensions import limiter
 

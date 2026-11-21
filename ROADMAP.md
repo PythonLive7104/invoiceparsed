@@ -140,22 +140,40 @@ prevents summing across currencies — that belongs with the analytics work (P4.
 *Acceptance met:* a line-item set sums to its stated total exactly, with no
 epsilon tolerance.
 
-### [ ] F3. Multi-tenancy (Organization + RBAC)
+### [x] F3. Multi-tenancy (Organization + RBAC)
 
-Introduce `Organization`, `OrganizationMembership`, `Role`, `Permission`. Add
-`organization_id` to every tenant-owned table. Backfill: one personal
-organization per existing user, with that user as owner — existing accounts must
-keep working untouched. Enforce tenant scoping in a single query layer rather
-than per-route `filter_by`, so one forgotten filter cannot leak across tenants.
+Done. `Organization` and `OrganizationMembership` exist; `organization_id` is on
+`extractions`, `api_keys`, `webhooks`, `payments` and `subscriptions`. Tenant
+scoping lives in `tenancy.scoped()`, which **raises rather than returning an
+unfiltered query** when no organization is attached — a forgotten filter can no
+longer silently become "every tenant's rows".
 
-Roles: owner, administrator, finance manager, accountant, procurement officer,
-department manager, approver, read-only.
+**The plan moved from `users.plan` to `organizations.plan`.** A team shares one
+monthly allowance; a per-user plan would hand every colleague their own quota,
+and "number of users" could not be a pricing dimension at all. Usage counting is
+per organization too.
 
-*Why here:* retrofitting a tenant boundary after Phase 2 means rewriting every
-Phase 2 query. Doing it now costs one refactor instead of several.
+Eight roles with permissions defined as data in `roles.py` (owner,
+administrator, finance manager, accountant, procurement officer, department
+manager, approver, viewer), including permissions for Phase 2 features that do
+not exist yet, so role definitions stay stable as those land.
+`suppliers:bank:read` is deliberately separate — bank details are the
+highest-value target in the dataset.
 
-*Acceptance:* a cross-tenant access test suite — a member of org A cannot read,
-edit, export or approve anything belonging to org B through any endpoint.
+Request resolution: an `X-Organization-Id` header validated against membership
+(a non-member gets **403, not a silent fall back** — falling back would make
+probing someone else's id look successful), else an API key's own organization,
+else the caller's personal organization. An API key cannot be redirected to
+another organization by that header.
+
+Existing accounts keep working untouched: the migration gives each user a
+personal organization, carrying over their old plan, and attributes all their
+rows to it. Verified against a seeded pre-tenancy database — paid plans
+preserved, nothing left unattributed.
+
+*Acceptance met:* 22 cross-tenant tests covering reads, edits, deletes, exports,
+file downloads, list endpoints, usage counting, API-key scope, role refusals and
+webhook dispatch.
 
 ### [ ] F4. Background job queue
 
@@ -168,11 +186,35 @@ queues so a 60-page bank statement cannot starve single-invoice uploads.
 *Acceptance:* `processing` is always truthful — no row stays in it after a worker
 restart, and a failed job never consumes plan quota.
 
-### [ ] F5. CI, linting, and a test baseline
+### [~] F5. CI, linting, and a test baseline
 
-GitHub Actions running pytest and `vite build` on push; ruff for Python, eslint
-for JS; frontend tests (Vitest + React Testing Library). Cheap, and everything
-below depends on being able to refactor safely.
+Done: `.github/workflows/ci.yml` runs on every push and PR —
+
+- **Backend**: ruff lint, the full pytest suite, and a **migration drift check**
+  that applies every migration to an empty database and then asserts
+  autogenerate finds nothing left to do. That catches the common failure of
+  editing a model and forgetting to generate a revision. Verified in both
+  directions: it passes on a clean tree and fails when a column is added without
+  a migration.
+- **Frontend**: `npm run build`, which covers the sitemap, Vite build and
+  prerender, so a broken import or missing export fails the job.
+- Provider credentials are pinned blank in the job env so a runner variable can
+  never point the suite at a real OpenAI, Resend or Bachs account.
+
+`backend/ruff.toml` selects pyflakes, pycodestyle, import sorting, bugbear,
+pyupgrade, comprehensions, returns and simplify. The baseline is clean.
+
+**Deferred: frontend unit tests.** Blocked on a real dependency conflict rather
+than abandoned — `package.json` pins `vite ^8` while `@vitejs/plugin-react` is
+`4.x`, which declares support only to vite 7. A plain `npm ci` fails with
+ERESOLVE on the committed lockfile (the Dockerfile and now CI both pass
+`--legacy-peer-deps`), and installing Vitest under that flag produced an
+incomplete dependency tree that could not run a single test. The fix is to
+upgrade `@vitejs/plugin-react` to 6.x, which supports vite 8, then drop the flag
+from the Dockerfile and CI together and add Vitest on a sound tree. Doing it
+under the flag would have left a test runner that silently does not work.
+
+**Also still to do:** eslint (not yet configured).
 
 ---
 
@@ -247,7 +289,40 @@ exactly with billing. **Failed and retried jobs must not consume quota** — tod
 usage counts `status == "completed"`, which is correct, and F4's retry logic has
 to preserve that.
 
-### [ ] P1.7 Pricing and subscription management
+### [~] P1.7 Pricing and subscription management
+
+**Bachs migration — done. Paystack removed entirely.** `billing.py` and its test
+suite are deleted; `bachs.py` is the only provider.
+
+- Hosted subscription checkout with an `Idempotency-Key`, so a retried request
+  cannot open two subscriptions.
+- Webhook verification: HMAC-SHA256 over `timestamp.body`, `X-Bachs-Signature-V2`
+  (accepting several `v1=` values during secret rotation) plus the legacy header
+  pair, 300s replay window, constant-time comparison.
+- `/billing/verify` for the return page (`?checkout_id=`), with an ownership
+  check so a guessed id cannot upgrade the caller.
+- `/billing/sync` reconciles entitlement from the provider's subscription
+  records, and deliberately does **not** downgrade when every read fails — a
+  provider outage must not cost a paying customer their plan.
+- `/billing/cancel` and `/billing/subscription`, cancelling at period end.
+- `provider_events` de-duplicates at-least-once delivery on the envelope id;
+  `subscriptions` maps users to provider subscriptions, which is the only way a
+  renewal invoice (no metadata of ours) can be attributed.
+
+Access rules are taken from the docs, not guessed: revoke on
+`customer.subscription.deleted` and on an `unpaid` status (where "mark unpaid"
+accounts land after dunning); keep access through `past_due` and through a
+scheduled `cancel_at_period_end`, because that period is paid for.
+
+Money: amounts are decimal major units end to end. `Payment.amount` moved from
+an integer of minor units to `Numeric(18, 4)`, with the migration converting
+existing rows.
+
+*Still to do:* plan *tiers* themselves (enterprise, per-seat, usage dimensions)
+are untouched — only the provider changed. No cancel button in the UI yet,
+though the endpoint exists. Sandbox verification against the real Bachs API has
+not been run.
+
 
 Plan tiers (free/trial, starter, professional, business, enterprise) with
 dimensions: monthly allowance, users, organizations, pages, advanced validation,

@@ -12,6 +12,7 @@ emails a consistent look.
 import httpx
 
 from config import Config
+from money import as_json
 
 RESEND_ENDPOINT = "https://api.resend.com/emails"
 
@@ -196,7 +197,11 @@ def send_payment_receipt(
 ) -> bool:
     """Receipt for a successful payment. `amount` is in major units (e.g. dollars)."""
     cur = (currency or "USD").upper()
-    amount_str = f"{amount:.2f}" if isinstance(amount, (int, float)) else str(amount or "—")
+    # as_json quantizes to 2 places and handles Decimal, int, float and numeric
+    # strings alike. A plain isinstance check on (int, float) missed Decimal -
+    # which is what amounts actually are now - and rendered "49.0000"; and
+    # `amount or "-"` treated a legitimate 0.00 as missing.
+    amount_str = as_json(amount) or "—"
     plan_label = (plan or "").capitalize() or "your subscription"
     rows = [
         ("Plan", plan_label),
@@ -234,7 +239,7 @@ def text_to_html(text: str) -> str:
     Blank lines separate paragraphs; single newlines become line breaks. Escapes
     the content so admins can paste plain text without worrying about markup.
     """
-    blocks = [b for b in (text or "").replace("\r\n", "\n").split("\n\n")]
+    blocks = list((text or "").replace("\r\n", "\n").split("\n\n"))
     return "".join(_para(_escape(block)) for block in blocks if block.strip())
 
 

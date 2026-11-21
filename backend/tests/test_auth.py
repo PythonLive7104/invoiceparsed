@@ -1,5 +1,5 @@
 """Auth + email-verification flow."""
-from tests.conftest import make_user, auth_header
+from tests.conftest import auth_header, make_user
 
 
 def test_register_returns_no_token_and_needs_verification(client, app):
@@ -30,8 +30,8 @@ def test_verify_email_then_login(client, app):
     client.post("/api/auth/register", json={
         "name": "Flo", "email": "flo@example.com", "password": "password123",
     })
-    from models import User
     from auth import issue_verify_token
+    from models import User
     with app.app_context():
         u = User.query.filter_by(email="flo@example.com").first()
         token = issue_verify_token(u)
@@ -83,7 +83,8 @@ def test_delete_account_removes_user_and_data(client, app):
     from extensions import db
     from models import Extraction, User
     with app.app_context():
-        db.session.add(Extraction(user_id=user["id"], file_name="f", file_type="image/png",
+        db.session.add(Extraction(organization_id=user["organization_id"],
+                                   user_id=user["id"], file_name="f", file_type="image/png",
                                    file_size=1, data="{}", status="completed"))
         db.session.commit()
 
@@ -96,8 +97,8 @@ def test_delete_account_removes_user_and_data(client, app):
 
 def test_password_reset_marks_verified(client, app):
     make_user(app, email="r@example.com", verified=False, password="password123")
-    from models import User
     from auth import issue_reset_token
+    from models import User
     with app.app_context():
         u = User.query.filter_by(email="r@example.com").first()
         token = issue_reset_token(u)

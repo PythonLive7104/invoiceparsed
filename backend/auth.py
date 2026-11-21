@@ -11,7 +11,7 @@ Decorators:
 """
 import hashlib
 import secrets
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from functools import wraps
 
 import httpx
@@ -22,6 +22,11 @@ from werkzeug.security import check_password_hash, generate_password_hash
 from extensions import db
 from models import ApiKey, User
 from plans import plan_allows
+from tenancy import (
+    TenantError,
+    attach_organization,
+    organization_id_from_request,
+)
 
 
 # ─── Passwords ─────────────────────────────────────────────────────────────
@@ -35,7 +40,7 @@ def verify_password(password: str, password_hash: str) -> bool:
 
 # ─── JWT ───────────────────────────────────────────────────────────────────
 def issue_token(user: User) -> str:
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     payload = {
         "sub": user.id,
         "email": user.email,
@@ -67,7 +72,7 @@ def _pw_fingerprint(user: User) -> str:
 
 
 def issue_reset_token(user: User) -> str:
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     payload = {
         "sub": user.id,
         "purpose": "pwreset",
@@ -96,7 +101,7 @@ def verify_reset_token(token: str) -> User | None:
 
 # ─── Email verification tokens ───────────────────────────────────────────────
 def issue_verify_token(user: User) -> str:
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     payload = {
         "sub": user.id,
         "purpose": "verify",
@@ -255,7 +260,12 @@ def rate_limit_key() -> str:
 
 # ─── Decorators ──────────────────────────────────────────────────────────────
 def login_required(fn):
-    """Protect a route with a JWT session; attaches the user to flask.g.user."""
+    """Protect a route with a JWT session.
+
+    Attaches flask.g.user, and also g.organization / g.membership — the tenant
+    this request acts as. Handlers can rely on those being set, which is what
+    lets tenancy.scoped() refuse to build an unscoped query.
+    """
     @wraps(fn)
     def wrapper(*args, **kwargs):
         user = _user_from_jwt()
@@ -263,6 +273,13 @@ def login_required(fn):
             return jsonify({"error": "Not authenticated."}), 401
         g.user = user
         g.auth_method = "jwt"
+        try:
+            attach_organization(user, organization_id_from_request())
+        except TenantError as exc:
+            # 403, not a silent fall back to the caller's own organization:
+            # falling back would make probing someone else's id look successful.
+            return jsonify({"error": str(exc), "code": "NO_SUCH_ORGANIZATION"}), 403
+        db.session.commit()  # persists a repaired/backfilled personal org
         return fn(*args, **kwargs)
 
     return wrapper
@@ -274,7 +291,14 @@ def api_or_login_required(fn):
     def wrapper(*args, **kwargs):
         user, key = _resolve_api_key()
         if user is not None and key is not None:
-            if not plan_allows(user.plan, "api"):
+            # An API key belongs to one organization, so it decides the tenant
+            # outright — an X-Organization-Id header must not let a key reach
+            # another organization even if its owner is a member there.
+            try:
+                attach_organization(user, key.organization_id)
+            except TenantError as exc:
+                return jsonify({"error": str(exc), "code": "NO_SUCH_ORGANIZATION"}), 403
+            if not plan_allows(g.organization.plan, "api"):
                 return jsonify({"error": "API access requires the Pro plan."}), 403
             key.last_used_at = datetime.utcnow()
             db.session.commit()
@@ -288,6 +312,11 @@ def api_or_login_required(fn):
             return jsonify({"error": "Not authenticated."}), 401
         g.user = user
         g.auth_method = "jwt"
+        try:
+            attach_organization(user, organization_id_from_request())
+        except TenantError as exc:
+            return jsonify({"error": str(exc), "code": "NO_SUCH_ORGANIZATION"}), 403
+        db.session.commit()
         return fn(*args, **kwargs)
 
     return wrapper

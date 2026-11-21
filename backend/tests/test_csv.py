@@ -4,7 +4,7 @@ import io
 
 import openpyxl
 
-from csv_util import invoice_to_csv, receipt_to_csv, HEADERS, RECEIPT_HEADERS, STATEMENT_HEADERS
+from csv_util import HEADERS, RECEIPT_HEADERS, STATEMENT_HEADERS, invoice_to_csv, receipt_to_csv
 from xlsx_util import document_to_xlsx
 
 

@@ -2,7 +2,7 @@
 import io
 from decimal import Decimal
 
-from tests.conftest import make_user, auth_header
+from tests.conftest import auth_header, make_user
 
 
 def _file(name="invoice.png", content=b"\x89PNG\r\n\x1a\nfake"):
@@ -244,6 +244,7 @@ def test_statement_allowance_caps_statements_only(client, app, monkeypatch):
     with app.app_context():
         for i in range(2):
             db.session.add(Extraction(
+                organization_id=user["organization_id"],
                 user_id=user["id"], doc_type="statement", file_name=f"s{i}",
                 file_type="image/png", file_size=10, data="{}", status="completed",
             ))
@@ -309,6 +310,7 @@ def test_usage_limit_reached_returns_402(client, app, monkeypatch):
     with app.app_context():
         for i in range(5):
             db.session.add(Extraction(
+                organization_id=user["organization_id"],
                 user_id=user["id"], file_name=f"f{i}", file_type="image/png",
                 file_size=10, data="{}", status="completed",
             ))

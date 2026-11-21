@@ -1,0 +1,53 @@
+# Lint config for the Flask API.
+#
+# Deliberately close to Ruff's defaults plus a few rule groups that catch the
+# mistakes this codebase has actually made: unused imports that reveal a
+# half-finished refactor (an unused `require_permission` import was how a
+# missing billing authorization check surfaced), mutable default arguments, and
+# bare excepts that swallow the errors we need to see in billing and extraction.
+
+line-length = 100
+target-version = "py312"
+
+exclude = [
+    ".venv",
+    # Alembic revisions are generated and then hand-edited; their style is
+    # Alembic's, and rewriting them would make the history harder to read
+    # against what Alembic produces.
+    "migrations",
+]
+
+[lint]
+select = [
+    "F",    # pyflakes: unused imports/variables, undefined names
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "I",    # import sorting
+    "B",    # bugbear: mutable defaults, assert-on-tuple, etc.
+    "UP",   # pyupgrade: outdated syntax for the target version
+    "C4",   # comprehension simplifications
+    "RET",  # unnecessary branches around returns
+    "SIM",  # obvious simplifications
+]
+
+ignore = [
+    "E501",    # line length is handled by the formatter, not an error
+    "SIM108",  # ternary-instead-of-if is often less readable here
+    "RET504",  # a named variable before `return` frequently documents intent
+    "B008",    # Flask/SQLAlchemy idioms legitimately call in defaults
+]
+
+[lint.per-file-ignores]
+# Tests assert on private helpers and import inside functions to keep the app
+# factory from being built at import time.
+"tests/*" = ["F401", "E402"]
+# The app factory imports blueprints for their side effect of registering.
+"app.py" = ["E402"]
+
+[lint.isort]
+known-first-party = [
+    "admin", "auth", "bachs", "config", "csv_util", "documents", "emails",
+    "extensions", "invoice_schema", "json_provider", "models", "money",
+    "openai_service", "plans", "receipt_schema", "roles", "statement_schema",
+    "support_kb", "tenancy", "usage", "webhooks", "xlsx_util",
+]

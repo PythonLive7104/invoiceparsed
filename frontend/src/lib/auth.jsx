@@ -6,6 +6,10 @@ const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
+  // The organization this session is acting as, and the list the user belongs
+  // to. The PLAN lives here, not on the user: a team shares one allowance.
+  const [organization, setOrganization] = useState(null);
+  const [organizations, setOrganizations] = useState([]);
   const [usage, setUsage] = useState(null);
   const [loading, setLoading] = useState(true);
 
@@ -19,6 +23,8 @@ export function AuthProvider({ children }) {
     try {
       const { data } = await api.get("/api/auth/me");
       setUser(data.user);
+      setOrganization(data.organization ?? null);
+      setOrganizations(data.organizations ?? []);
       setUsage(data.usage);
       // If they ran an extraction on the landing page before signing up, adopt
       // it into this account now. No-ops when there's no pending demo. Kept
@@ -34,6 +40,8 @@ export function AuthProvider({ children }) {
     } catch {
       setToken(null);
       setUser(null);
+      setOrganization(null);
+      setOrganizations([]);
       setUsage(null);
     } finally {
       setLoading(false);
@@ -72,6 +80,8 @@ export function AuthProvider({ children }) {
     try {
       const { data } = await api.get("/api/auth/me");
       setUser(data.user);
+      setOrganization(data.organization ?? null);
+      setOrganizations(data.organizations ?? []);
       setUsage(data.usage);
       return true;
     } catch {
@@ -116,6 +126,8 @@ export function AuthProvider({ children }) {
   const logout = useCallback(() => {
     setToken(null);
     setUser(null);
+    setOrganization(null);
+    setOrganizations([]);
     setUsage(null);
   }, []);
 
@@ -123,17 +135,22 @@ export function AuthProvider({ children }) {
     await api.delete("/api/auth/account");
     setToken(null);
     setUser(null);
+    setOrganization(null);
+    setOrganizations([]);
     setUsage(null);
   }, []);
 
-  // Returns the refreshed user so callers can act on it without waiting for the
-  // context re-render (the checkout return page polls for the plan to flip).
+  // Returns the refreshed ORGANIZATION so callers can act on it without waiting
+  // for the context re-render. The checkout return page polls for the plan to
+  // flip, and the plan is on the organization.
   const refreshUsage = useCallback(async () => {
     try {
       const { data } = await api.get("/api/auth/me");
       setUser(data.user);
+      setOrganization(data.organization ?? null);
+      setOrganizations(data.organizations ?? []);
       setUsage(data.usage);
-      return data.user;
+      return data.organization ?? null;
     } catch {
       return null;
     }
@@ -141,6 +158,11 @@ export function AuthProvider({ children }) {
 
   const value = {
     user,
+    organization,
+    organizations,
+    // Convenience: the acting organization's plan. Read this rather than
+    // user.plan, which no longer exists.
+    plan: organization?.plan ?? "free",
     usage,
     loading,
     login,

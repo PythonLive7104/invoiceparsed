@@ -4,7 +4,6 @@
 coerces model output into a predictable shape with all keys present.
 """
 from money import money as _money
-from money import rate as _rate
 
 STATEMENT_JSON_SCHEMA = {
     "type": "object",

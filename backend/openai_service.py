@@ -10,7 +10,7 @@ import json
 from openai import OpenAI
 
 from config import Config
-from invoice_schema import INVOICE_JSON_SCHEMA, normalize
+from invoice_schema import INVOICE_JSON_SCHEMA
 from invoice_schema import normalize as normalize_invoice
 from receipt_schema import RECEIPT_JSON_SCHEMA
 from receipt_schema import normalize as normalize_receipt

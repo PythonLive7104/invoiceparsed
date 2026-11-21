@@ -1,5 +1,5 @@
 """API key + webhook management endpoints (Pro-gated)."""
-from tests.conftest import make_user, auth_header
+from tests.conftest import auth_header, make_user
 
 
 # ─── API keys ────────────────────────────────────────────────────────────────

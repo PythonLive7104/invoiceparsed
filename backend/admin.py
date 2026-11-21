@@ -13,17 +13,25 @@ Beyond CRUD it adds:
 """
 import hmac
 
-from flask import Response, flash, redirect, request, url_for
+from flask import Response, flash, request
 from flask_admin import Admin, AdminIndexView, BaseView, expose
 from flask_admin.actions import action
 from flask_admin.contrib.sqla import ModelView
-from markupsafe import Markup
 from sqlalchemy import func
 
 import emails
 from config import Config
 from extensions import db
-from models import ApiKey, Extraction, Payment, User, Webhook
+from models import (
+    ApiKey,
+    Extraction,
+    Organization,
+    OrganizationMembership,
+    Payment,
+    Subscription,
+    User,
+    Webhook,
+)
 
 PLAN_CHOICES = ("free", "starter", "pro", "business")
 
@@ -70,7 +78,9 @@ class SecureModelView(_AuthMixin, ModelView):
 def _dashboard_stats() -> dict:
     """Aggregate headline numbers for the admin home page."""
     plan_counts = dict(
-        db.session.query(User.plan, func.count(User.id)).group_by(User.plan).all()
+        db.session.query(Organization.plan, func.count(Organization.id))
+        .group_by(Organization.plan)
+        .all()
     )
     # Sum successful payments (amounts are stored in cents); expose major units.
     revenue_cents = (
@@ -141,15 +151,29 @@ class EmailComposeView(_AuthMixin, BaseView):
             return [a.strip() for a in raw if a.strip()]
         query = User.query.filter(User.email_verified.is_(True))
         if audience == "plan" and plan in PLAN_CHOICES:
-            query = query.filter(User.plan == plan)
+            # The plan is on the organization, so reach users through membership.
+            query = (
+                query.join(
+                    OrganizationMembership,
+                    OrganizationMembership.user_id == User.id,
+                )
+                .join(
+                    Organization,
+                    Organization.id == OrganizationMembership.organization_id,
+                )
+                .filter(Organization.plan == plan)
+                .distinct()
+            )
         return [u.email for u in query.all() if u.email]
 
 
 # ─── Model views ─────────────────────────────────────────────────────────────
 class UserAdmin(SecureModelView):
-    column_list = ("email", "name", "plan", "email_verified", "created_at")
+    # No plan column: the plan belongs to the organization, and a user can be in
+    # several. Use the Organizations view to see or filter by plan.
+    column_list = ("email", "name", "email_verified", "created_at")
     column_searchable_list = ("email", "name")
-    column_filters = ("plan", "email_verified")
+    column_filters = ("email_verified",)
     column_default_sort = ("created_at", True)
     # Never expose secrets / let them be edited blindly.
     column_exclude_list = ("password_hash", "google_sub")
@@ -164,13 +188,41 @@ class UserAdmin(SecureModelView):
         flash(f"Welcome email sent to {sent} of {len(users)} user(s).")
 
     def _set_plan(self, ids, plan):
+        """Change the plan of each selected user's PERSONAL organization.
+
+        The plan lives on the organization now, so a bulk action over users has
+        to resolve one. It deliberately only touches personal organizations:
+        changing a shared team's plan from a user row would surprise every other
+        member of that team, so a shared organization is changed from the
+        Organizations view instead.
+        """
         users = User.query.filter(User.id.in_(ids)).all()
+        changed = []
         for u in users:
-            u.plan = plan
+            membership = (
+                OrganizationMembership.query.join(
+                    Organization,
+                    Organization.id == OrganizationMembership.organization_id,
+                )
+                .filter(
+                    OrganizationMembership.user_id == u.id,
+                    Organization.is_personal.is_(True),
+                )
+                .first()
+            )
+            if membership is None:
+                continue
+            organization = Organization.query.get(membership.organization_id)
+            organization.plan = plan
+            changed.append(u)
         db.session.commit()
-        for u in users:
+        for u in changed:
             emails.send_plan_changed(u.email, plan, u.name)
-        flash(f"Set {len(users)} user(s) to the {plan} plan (notification sent).")
+        skipped = len(users) - len(changed)
+        message = f"Set {len(changed)} user(s) to the {plan} plan (notification sent)."
+        if skipped:
+            message += f" {skipped} skipped (no personal organization)."
+        flash(message)
 
     @action("plan_free", "Change plan → free")
     def action_plan_free(self, ids):
@@ -224,6 +276,11 @@ def init_admin(app) -> None:
         index_view=SecureIndexView(url="/admin"),
     )
     admin.add_view(UserAdmin(User, db.session))
+    admin.add_view(SecureModelView(Organization, db.session, name="Organizations"))
+    admin.add_view(SecureModelView(
+        OrganizationMembership, db.session, name="Memberships"
+    ))
+    admin.add_view(SecureModelView(Subscription, db.session, name="Subscriptions"))
     admin.add_view(ExtractionAdmin(Extraction, db.session))
     admin.add_view(ApiKeyAdmin(ApiKey, db.session))
     admin.add_view(WebhookAdmin(Webhook, db.session))

@@ -5,8 +5,6 @@ import shutil
 
 from flask import Blueprint, current_app, g, jsonify, redirect, request
 
-from config import Config
-
 from auth import (
     hash_password,
     issue_reset_token,
@@ -18,9 +16,17 @@ from auth import (
     verify_reset_token,
     verify_verify_token,
 )
+from config import Config
 from emails import send_password_reset, send_verification, send_welcome
 from extensions import db, limiter
-from models import Extraction, User
+from models import Extraction, Organization, User
+from roles import permissions_for
+from tenancy import (
+    current_organization,
+    current_role,
+    ensure_personal_organization,
+    memberships_for,
+)
 from usage import usage_for
 
 auth_bp = Blueprint("auth", __name__, url_prefix="/api/auth")
@@ -31,10 +37,23 @@ EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 auth_limit = limiter.limit(lambda: current_app.config["RATELIMIT_AUTH"])
 
 
-def _send_verification(user: User) -> None:
+def _send_verification(user: User) -> bool:
+    """Email the confirmation link. Returns whether it was accepted.
+
+    The return value matters: an email/password account gets no session until it
+    is confirmed, so a silently failed send leaves the person unable to sign in
+    with nothing on screen explaining why. Callers surface it.
+    """
     token = issue_verify_token(user)
     link = f'{current_app.config["APP_URL"].rstrip("/")}/verify-email?token={token}'
-    send_verification(user.email, link, user.name)
+    sent = send_verification(user.email, link, user.name)
+    if not sent:
+        current_app.logger.error(
+            "Verification email could NOT be sent to user_id=%s - they cannot "
+            "sign in until this is fixed. Check RESEND_API_KEY and that "
+            "RESEND_FROM uses a verified domain.", user.id,
+        )
+    return sent
 
 
 
@@ -59,15 +78,25 @@ def register():
         email=email,
         name=name,
         password_hash=hash_password(password),
-        plan="free",
         email_verified=False,
     )
     db.session.add(user)
+    db.session.flush()  # need the id to own an organization
+    # Every account gets a personal organization, so a solo user is simply an
+    # organization of one and nothing downstream has to special-case "no tenant".
+    ensure_personal_organization(user)
     db.session.commit()
 
     # No session yet — the user must confirm their email first. Don't return a token.
-    _send_verification(user)
-    return jsonify({"user": user.public(), "needsVerification": True})
+    sent = _send_verification(user)
+    # The account exists either way, so this is not an error — but the client
+    # must know the link never arrived, or the user sits on "check your inbox"
+    # forever. They can retry from /resend-verification.
+    return jsonify({
+        "user": user.public(),
+        "needsVerification": True,
+        "verificationEmailSent": sent,
+    })
 
 
 @auth_bp.post("/login")
@@ -111,11 +140,14 @@ def _upsert_google_user(info: dict) -> User:
                 name=info.get("name"),
                 google_sub=info["sub"],
                 image=info.get("picture"),
-                plan="free",
             )
             db.session.add(user)
+            db.session.flush()
+            ensure_personal_organization(user)
     # Google has already verified ownership of the email address.
     user.email_verified = True
+    # Idempotent: covers accounts created before tenancy existed.
+    ensure_personal_organization(user)
     db.session.commit()
     return user
 
@@ -245,8 +277,27 @@ def resend_verification():
 @auth_bp.get("/me")
 @login_required
 def me():
+    """The signed-in user, the organization they are acting as, and their usage.
+
+    `organizations` lists every organization they belong to, with the role in
+    each, so the client can offer a switcher without a second request.
+    """
     user = g.user
-    return jsonify({"user": user.public(), "usage": usage_for(user)})
+    organization = current_organization()
+    rows = memberships_for(user)
+    organizations = []
+    for row in rows:
+        org = Organization.query.get(row.organization_id)
+        if org is not None:
+            organizations.append({**org.public(), "role": row.role})
+    return jsonify({
+        "user": user.public(),
+        "organization": organization.public() if organization else None,
+        "role": current_role(),
+        "permissions": sorted(permissions_for(current_role() or "")),
+        "organizations": organizations,
+        "usage": usage_for(organization),
+    })
 
 
 # ─── Account settings ────────────────────────────────────────────────────────

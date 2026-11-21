@@ -155,7 +155,7 @@ def test_xlsx_export_succeeds_with_decimals(client, app, monkeypatch):
     wb = load_workbook(io.BytesIO(r.get_data()))
     rows = list(wb.active.iter_rows(values_only=True))
     headers, first = rows[0], rows[1]
-    cells = dict(zip(headers, first))
+    cells = dict(zip(headers, first, strict=False))
 
     # Amounts must arrive as numbers, not text. If they land as strings, Excel
     # shows them left-aligned and SUM() over the column returns 0 - the export
@@ -163,7 +163,7 @@ def test_xlsx_export_succeeds_with_decimals(client, app, monkeypatch):
     # so reading back a float here is the format's own representation, not our
     # pipeline reintroducing one.)
     for column in ("Amount", "Total", "Subtotal"):
-        assert isinstance(cells[column], (int, float, Decimal)), (
+        assert isinstance(cells[column], int | float | Decimal), (
             f"{column} came through as {type(cells[column]).__name__}: {cells[column]!r}"
         )
     assert float(cells["Amount"]) == 0.10
@@ -193,7 +193,8 @@ def test_webhook_payload_money_matches_the_api(client, app, monkeypatch):
     with app.app_context():
         from models import Extraction
         row = Extraction.query.filter_by(id=body["id"]).first()
-        hook = Webhook(user_id=row.user_id, url="https://example.com/hook", secret="s")
+        hook = Webhook(organization_id=row.organization_id, user_id=row.user_id,
+                       url="https://example.com/hook", secret="s")
         db.session.add(hook)
         db.session.commit()
         webhooks.deliver(hook, "extraction.completed", json.loads(row.data),

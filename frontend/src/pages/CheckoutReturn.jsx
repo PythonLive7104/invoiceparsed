@@ -7,21 +7,25 @@ import { useAuth } from "@/lib/auth.jsx";
 import { PLANS } from "@/lib/plans";
 import { track, EVENTS } from "@/lib/analytics";
 
-// Paystack transaction statuses, from the server-side verify.
-const FAILURE = new Set(["failed", "abandoned", "reversed", "cancelled"]);
-const SUCCESS = new Set(["success", "succeeded"]);
+// Checkout statuses reported by the server-side verify.
+const FAILURE = new Set(["failed", "abandoned", "reversed", "cancelled", "expired"]);
+const SUCCESS = new Set(["success", "succeeded", "completed"]);
 
-// If verify can't confirm it (a pending charge, or Paystack unreachable), fall back
-// to watching for the webhook to flip the plan before showing "processing".
+// If verify can't confirm it (a charge still settling, or the provider
+// unreachable), fall back to watching for the webhook to flip the plan before
+// showing "processing".
 const POLL_ATTEMPTS = 8;
 const POLL_INTERVAL = 2000;
 
 export default function CheckoutReturn() {
-  const { user, refreshUsage } = useAuth();
+  const { plan, refreshUsage } = useAuth();
   const [params] = useSearchParams();
   const intendedPlan = params.get("plan");
-  // Paystack appends both on the callback; they hold the same value.
-  const reference = params.get("reference") || params.get("trxref");
+  // Bachs appends ?checkout_id= to success_url. The older Paystack params are
+  // still read so a checkout started before the provider switch, or a bookmarked
+  // return URL, still resolves instead of silently falling through to polling.
+  const checkoutId =
+    params.get("checkout_id") || params.get("reference") || params.get("trxref");
 
   // checking | success | failed | processing
   const [state, setState] = useState("checking");
@@ -32,15 +36,19 @@ export default function CheckoutReturn() {
     startedRef.current = true;
 
     let cancelled = false;
-    const planActivated = (u) =>
-      intendedPlan ? u?.plan === intendedPlan : u?.plan && u.plan !== "free";
+    // refreshUsage returns the ORGANIZATION, which is where the plan lives.
+    const planActivated = (org) =>
+      intendedPlan ? org?.plan === intendedPlan : org?.plan && org.plan !== "free";
 
-    // Ask the server to verify the reference with Paystack. This is authoritative and
-    // activates the plan on the spot, so we don't have to race the webhook.
+    // Ask the server to verify the checkout with the provider. This is
+    // authoritative and activates the plan on the spot, so we don't race the
+    // webhook.
     async function verify() {
-      if (!reference) return null;
+      if (!checkoutId) return null;
       try {
-        const { data } = await api.post("/api/billing/verify", { reference });
+        const { data } = await api.post("/api/billing/verify", {
+          checkout_id: checkoutId,
+        });
         return data?.status ?? null;
       } catch {
         return null; // fall through to polling
@@ -57,7 +65,7 @@ export default function CheckoutReturn() {
         return;
       }
       if (attempt + 1 >= POLL_ATTEMPTS) {
-        // The charge most likely went through (Paystack redirected us here) but
+        // The charge most likely went through (the provider redirected us here) but
         // nothing has confirmed it yet — don't claim failure.
         setState("processing");
         return;
@@ -83,14 +91,14 @@ export default function CheckoutReturn() {
     return () => {
       cancelled = true;
     };
-  }, [reference, intendedPlan, refreshUsage]);
+  }, [checkoutId, intendedPlan, refreshUsage]);
 
   // The auth context may confirm the plan independently of our polling.
   useEffect(() => {
     if (state !== "checking") return;
     const activated = intendedPlan
-      ? user?.plan === intendedPlan
-      : user?.plan && user.plan !== "free";
+      ? plan === intendedPlan
+      : plan && plan !== "free";
     if (activated) setState("success");
   }, [user, state, intendedPlan]);
 
@@ -101,7 +109,7 @@ export default function CheckoutReturn() {
     if (state === "success" || state === "processing") {
       trackedRef.current = true;
       track(EVENTS.PAYMENT_SUCCEEDED, {
-        plan: intendedPlan || user?.plan || "unknown",
+        plan: intendedPlan || plan || "unknown",
         confirmed: state === "success",
       });
     }

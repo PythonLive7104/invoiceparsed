@@ -122,7 +122,8 @@ def test_delivery_blocked_when_host_rebinds_to_private(app, monkeypatch):
     from extensions import db
     from models import Webhook
     with app.app_context():
-        hook = Webhook(user_id=user["id"], url="https://rebind.example.com/hook", secret="s")
+        hook = Webhook(organization_id=user["organization_id"], user_id=user["id"],
+                       url="https://rebind.example.com/hook", secret="s")
         db.session.add(hook)
         db.session.commit()
 

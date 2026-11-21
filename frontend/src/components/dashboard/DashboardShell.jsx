@@ -25,7 +25,7 @@ const nav = [
 
 export default function DashboardShell() {
   const navigate = useNavigate();
-  const { user, usage, logout } = useAuth();
+  const { user, plan, usage, logout } = useAuth();
   const [open, setOpen] = useState(false);
 
   function onLogout() {
@@ -74,7 +74,7 @@ export default function DashboardShell() {
             <div className="truncate text-sm font-medium text-white">
               {user?.name || user?.email?.split("@")[0]}
             </div>
-            <div className="truncate text-xs capitalize text-slate-500">{user?.plan} plan</div>
+            <div className="truncate text-xs capitalize text-slate-500">{plan} plan</div>
           </div>
           <button
             onClick={onLogout}

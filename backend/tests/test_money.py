@@ -97,7 +97,7 @@ def test_rate_keeps_four_places():
     """Quantities and unit prices are legitimately fractional."""
     assert rate("0.0825") == Decimal("0.0825")
     assert rate("3.5") == Decimal("3.5000")
-    assert RATE_PLACES == Decimal("0.0001")
+    assert Decimal("0.0001") == RATE_PLACES
 
 
 def test_sum_quantizes_once_at_the_end():

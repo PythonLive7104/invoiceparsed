@@ -24,7 +24,8 @@ def _make_webhook(app, user):
     from extensions import db
     from models import Webhook
     with app.app_context():
-        w = Webhook(user_id=user["id"], url="https://example.com/hook", secret="shh", active=True)
+        w = Webhook(organization_id=user["organization_id"], user_id=user["id"],
+                    url="https://example.com/hook", secret="shh", active=True)
         db.session.add(w)
         db.session.commit()
         return w.id

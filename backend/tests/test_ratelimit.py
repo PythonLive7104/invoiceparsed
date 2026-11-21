@@ -100,7 +100,7 @@ def test_extract_rate_limited_per_account(tmp_path, monkeypatch):
     app = _enabled_app(tmp_path, monkeypatch)
     _stub_extract(monkeypatch)
 
-    from tests.conftest import make_user, auth_header
+    from tests.conftest import auth_header, make_user
     user = make_user(app, email="pro@example.com", plan="pro")  # plan limit: None
     headers = auth_header(app, user)
     client = app.test_client()
@@ -124,7 +124,7 @@ def test_extract_limit_is_not_shared_between_accounts(tmp_path, monkeypatch):
     app = _enabled_app(tmp_path, monkeypatch)
     _stub_extract(monkeypatch)
 
-    from tests.conftest import make_user, auth_header
+    from tests.conftest import auth_header, make_user
     noisy = make_user(app, email="noisy@example.com", plan="pro")
     quiet = make_user(app, email="quiet@example.com", plan="pro")
     client = app.test_client()

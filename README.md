@@ -203,7 +203,7 @@ Flask API (:5000)
    ├── /api/extract       upload → OpenAI vision → structured JSON  (enforces plan limit)
    ├── /api/extractions   list / get / delete / CSV download
    ├── /api/usage         monthly usage vs plan limit
-   └── /api/billing/upgrade   change plan (Paystack; demo stub when unconfigured)
+   └── /api/billing/upgrade   change plan (demo stub only; live changes go via checkout)
         │
         ├── Postgres (users, extractions)  via SQLAlchemy — bundled `db` service
         └── OpenAI API                    via the openai SDK
@@ -241,10 +241,10 @@ React context ([frontend/src/lib/auth.jsx](frontend/src/lib/auth.jsx)).
 | GET    | `/api/extractions/<id>/file/<n>` | ✓/🔑 | Fetch an original page/file   |
 | GET    | `/api/usage`                 | ✓    | Usage vs plan limit               |
 | GET    | `/api/billing/config`        | —    | Whether billing is live or demo   |
-| POST   | `/api/billing/checkout`      | ✓    | Start Paystack checkout → `{url}` (or demo switch) |
+| POST   | `/api/billing/checkout`      | ✓    | Start Bachs checkout → `{url}` (or demo switch) |
 | POST   | `/api/billing/upgrade`       | ✓    | Instant plan switch (demo)        |
-| POST   | `/api/billing/verify`        | ✓    | Verify a Paystack `reference` after checkout |
-| POST   | `/api/billing/webhook`       | 🔒   | Paystack webhook (HMAC-SHA512 signed) |
+| POST   | `/api/billing/verify`        | ✓    | Verify a Bachs `checkout_id` after checkout |
+| POST   | `/api/billing/webhook`       | 🔒   | Bachs webhook (HMAC-SHA256 signed) |
 | GET/POST/DELETE | `/api/keys[/<id>]`  | ✓    | Manage API keys (Pro)             |
 | GET/POST/DELETE | `/api/webhooks[/<id>]` | ✓ | Manage webhooks (Pro)            |
 | POST   | `/api/webhooks/<id>/test`    | ✓    | Send a test webhook               |
@@ -327,9 +327,9 @@ The `/api/extract` payload follows the PRD invoice schema — see
   upgrade prompts. `batch` and `multiPage` are plan capabilities gated
   server-side (Starter + Pro), exposed via `usage.capabilities`.
 - **History** — searchable table with view / CSV / delete.
-- **Billing** — Free / Starter / Pro / **Business** plans. Live **Paystack**
-  hosted checkout when configured (plan applied on the verified callback and by
-  the signed webhook), with an instant-switch demo mode when no key is set.
+- **Billing** — Free / Starter / Pro / **Business** plans. Live **Bachs**
+  subscription checkout, signed webhooks, payment history, self-service
+  reconcile and cancel-at-period-end.
 - **Abuse protection** — per-IP rate limiting on all endpoints, with a tighter
   budget on auth/credential routes (Flask-Limiter; Redis-backed in prod).
 - **B2C + B2B positioning** — the landing page has a "who it's for" split
@@ -352,7 +352,7 @@ pytest                 # runs the suite in backend/tests
 The suite covers auth + email verification, plan-capability gating (batch /
 multi-page / usage limits), the try-before-signup demo (per-IP cap, claiming,
 retention purge), webhook signing & retry/backoff, and billing
-(demo upgrade, Paystack checkout, signed webhooks). Tests use a temporary SQLite DB
+(demo upgrade, Bachs checkout, signed webhooks). Tests use a temporary SQLite DB
 and stub all external services — nothing leaves the machine.
 
 ## Going to production
@@ -371,15 +371,13 @@ and stub all external services — nothing leaves the machine.
   gunicorn -c gunicorn.conf.py wsgi:app
   ```
   Serve the frontend as a static build (`npm run build` → deploy `frontend/dist`).
-- **Payments (Paystack):** set `PAYSTACK_SECRET_KEY` — that's it. The recurring
-  monthly plans are provisioned in Paystack automatically from `plans.py` the first
-  time each tier is bought (`PAYSTACK_PLAN_*` exist only to pin a tier to a
-  hand-made plan). The billing UI opens a hosted Paystack checkout via
-  `POST /api/billing/checkout`. The plan is applied twice over, idempotently:
-  `POST /api/billing/verify` confirms the transaction reference the browser
-  returns with, and `POST /api/billing/webhook` (HMAC-SHA512 signature-verified
-  with the same secret key) handles the async confirmation and renewals. With no
-  key set, billing runs in demo mode (instant switch).
+- **Payments (Bachs):** set `BACHS_SECRET_KEY`, `BACHS_WEBHOOK_SECRET` and the
+  three `BACHS_PRODUCT_*` ids. Bachs has no plan objects, so each paid tier is a
+  recurring product you create once in their dashboard. Amounts are decimal
+  strings in major units, and webhooks are signed with a per-endpoint secret
+  (HMAC-SHA256 over `timestamp.body`) that is NOT the API key. Leave
+  `BACHS_SECRET_KEY` blank and set `BILLING_DEMO_MODE=true` for local dev;
+  with neither set, plan changes are refused rather than granted. See DEPLOY.md.
 - **Rate limiting:** enabled by default (per-IP). In production set
   `RATELIMIT_STORAGE_URI=redis://...` so limits are shared across workers.
 - **Demo tables:** the try-before-signup feature adds two *new* tables
