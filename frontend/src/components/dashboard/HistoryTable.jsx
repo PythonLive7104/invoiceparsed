@@ -1,6 +1,6 @@
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { Link } from "react-router-dom";
-import { Search, FileText, Receipt, Landmark, Download, Sheet, Trash2, Eye, Inbox, AlertCircle, Loader2 } from "lucide-react";
+import { FileText, Receipt, Landmark, Download, Sheet, Trash2, Eye, Inbox, AlertCircle, Loader2, Copy } from "lucide-react";
 
 const DOC_META = {
   receipt: { label: "Receipt", Icon: Receipt },
@@ -10,37 +10,43 @@ import { Button } from "@/components/ui/Button";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { cn, formatDate, formatMoney } from "@/lib/utils";
 import { api, downloadFile } from "@/lib/api";
+import { ValidationBadge } from "@/components/dashboard/ValidationPanel";
 
-export function HistoryTable({ initialItems }) {
-  const [items, setItems] = useState(initialItems);
-  const [q, setQ] = useState("");
+/** The list row carries a flat status + count; the badge wants the object. */
+function validationOf(it) {
+  if (!it.validationStatus) return null;
+  return { status: it.validationStatus, issueCount: it.issueCount ?? 0 };
+}
+
+/**
+ * Processing history rows.
+ *
+ * Controlled: filtering, searching and paging all happen on the server, so this
+ * renders exactly what it is given. It used to filter a fixed array in the
+ * browser, which only ever worked because the API returned at most 300 rows -
+ * anything older was invisible and unsearchable.
+ */
+export function HistoryTable({ items, emptyState = "none", onChanged }) {
   const [toDelete, setToDelete] = useState(null); // item pending confirmation
   const [deleting, setDeleting] = useState(false);
-
-  const filtered = useMemo(() => {
-    const term = q.trim().toLowerCase();
-    if (!term) return items;
-    return items.filter((it) =>
-      [it.vendorName, it.invoiceNumber, it.fileName]
-        .filter(Boolean)
-        .some((v) => v.toLowerCase().includes(term)),
-    );
-  }, [items, q]);
 
   async function confirmDelete() {
     if (!toDelete) return;
     setDeleting(true);
     try {
       await api.delete(`/api/extractions/${toDelete.id}`);
-      setItems((prev) => prev.filter((it) => it.id !== toDelete.id));
       setToDelete(null);
+      onChanged?.();
     } catch {
       /* ignore */
     }
     setDeleting(false);
   }
 
-  if (items.length === 0) {
+  // "none" means the organization has no documents at all; "filtered" means the
+  // current filters matched nothing. Telling those apart stops a filtered view
+  // from looking like an empty account.
+  if (items.length === 0 && emptyState === "none") {
     return (
       <div className="glass flex flex-col items-center justify-center rounded-2xl px-6 py-20 text-center">
         <span className="grid h-14 w-14 place-items-center rounded-2xl bg-white/[0.04] text-slate-500">
@@ -59,16 +65,6 @@ export function HistoryTable({ initialItems }) {
 
   return (
     <div className="space-y-4">
-      <div className="relative max-w-sm">
-        <Search size={16} className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500" />
-        <input
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          placeholder="Search vendor, invoice #, file…"
-          className="h-11 w-full rounded-xl border border-white/10 bg-ink-900/60 pl-10 pr-3.5 text-sm text-white placeholder:text-slate-600 outline-none focus:border-brand-400/60 focus:ring-2 focus:ring-brand-400/20"
-        />
-      </div>
-
       <div className="glass overflow-hidden rounded-2xl">
         <div className="overflow-x-auto">
           <table className="w-full min-w-[680px] text-sm">
@@ -79,11 +75,13 @@ export function HistoryTable({ initialItems }) {
                 <th className="px-4 py-3.5 font-medium">Date</th>
                 <th className="px-4 py-3.5 text-right font-medium">Total</th>
                 <th className="px-4 py-3.5 font-medium">Status</th>
+                <th className="px-4 py-3.5 font-medium">Checks</th>
+                <th className="px-4 py-3.5 font-medium">Uploaded by</th>
                 <th className="px-4 py-3.5 text-right font-medium">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-white/[0.05]">
-              {filtered.map((it) => {
+              {items.map((it) => {
                 const completed = it.status === "completed";
                 const processing = it.status === "processing";
                 const failed = !completed && !processing;
@@ -132,6 +130,30 @@ export function HistoryTable({ initialItems }) {
                         {processing ? <Loader2 size={12} className="animate-spin" /> : failed ? <AlertCircle size={12} /> : null}
                         {processing ? "Processing" : failed ? "Failed" : "Completed"}
                       </span>
+                      {failed && it.errorMessage && (
+                        <div className="mt-1 max-w-[220px] truncate text-xs text-red-300/80" title={it.errorMessage}>
+                          {it.errorMessage}
+                        </div>
+                      )}
+                    </td>
+                    <td className="px-4 py-3.5">
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <ValidationBadge validation={validationOf(it)} />
+                        {it.duplicateCount > 0 && (
+                          <span
+                            className="inline-flex items-center gap-1 rounded-full border border-rose-500/30 bg-rose-500/10 px-2 py-0.5 text-xs font-medium text-rose-300"
+                            title="Possible duplicate of another document"
+                          >
+                            <Copy size={11} /> {it.duplicateCount}
+                          </span>
+                        )}
+                      </div>
+                    </td>
+                    <td className="px-4 py-3.5 text-xs text-slate-400">
+                      <div className="truncate">{it.uploadedBy || "—"}</div>
+                      {it.processingMs ? (
+                        <div className="text-slate-600">{(it.processingMs / 1000).toFixed(1)}s</div>
+                      ) : null}
                     </td>
                     <td className="px-4 py-3.5">
                       <div className="flex items-center justify-end gap-1">
@@ -182,10 +204,10 @@ export function HistoryTable({ initialItems }) {
                   </tr>
                 );
               })}
-              {filtered.length === 0 && (
+              {items.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="px-5 py-10 text-center text-sm text-slate-500">
-                    No results for “{q}”.
+                  <td colSpan={8} className="px-5 py-10 text-center text-sm text-slate-500">
+                    Nothing matches these filters.
                   </td>
                 </tr>
               )}

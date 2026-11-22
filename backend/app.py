@@ -24,6 +24,7 @@ from routes import (
     demo_bp,
     extract_bp,
     keys_bp,
+    organization_bp,
     support_bp,
     webhook_bp,
 )
@@ -85,6 +86,7 @@ def create_app(config_class=Config) -> Flask:
     app.register_blueprint(demo_bp)
     app.register_blueprint(billing_bp)
     app.register_blueprint(keys_bp)
+    app.register_blueprint(organization_bp)
     app.register_blueprint(webhook_bp)
     app.register_blueprint(support_bp)
 

@@ -39,6 +39,13 @@ class Organization(db.Model):
     # Default currency for reports. Individual documents keep their own.
     currency = db.Column(db.String(3), nullable=True)      # ISO 4217
 
+    # Set when the owner dismisses the setup checklist. The checklist itself is
+    # derived from real state (is the email verified, are there documents yet),
+    # never from "I clicked next" - a stored wizard position lies the moment
+    # anything changes underneath it. This column only records "stop showing me
+    # this", which is genuinely a preference and cannot be derived.
+    onboarding_dismissed_at = db.Column(db.DateTime, nullable=True)
+
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     memberships = db.relationship(
@@ -55,6 +62,7 @@ class Organization(db.Model):
             "country": self.country,
             "taxId": self.tax_id,
             "currency": self.currency,
+            "onboardingDismissed": self.onboarding_dismissed_at is not None,
             "createdAt": self.created_at.isoformat() + "Z" if self.created_at else None,
         }
 
@@ -109,7 +117,14 @@ class User(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     extractions = db.relationship(
-        "Extraction", backref="user", cascade="all, delete-orphan", lazy="dynamic"
+        "Extraction",
+        # Extraction now has TWO foreign keys to users - the uploader and the
+        # reviewer - so the join has to be named explicitly. This relationship
+        # means "documents this person uploaded".
+        foreign_keys="Extraction.user_id",
+        backref="user",
+        cascade="all, delete-orphan",
+        lazy="dynamic",
     )
     api_keys = db.relationship(
         "ApiKey", backref="user", cascade="all, delete-orphan", lazy="dynamic"
@@ -161,6 +176,11 @@ class Extraction(db.Model):
     file_name = db.Column(db.String(255), nullable=False)
     file_type = db.Column(db.String(100), nullable=False)
     file_size = db.Column(db.Integer, nullable=False)
+    # SHA-256 over the uploaded bytes. The cheapest and most certain duplicate
+    # signal there is: identical bytes are the same document, whatever the
+    # extractor made of them. Nullable because rows created before this existed
+    # have none, and back-filling would mean re-reading every stored file.
+    file_hash = db.Column(db.String(64), nullable=True, index=True)
 
     # Denormalized headline fields for fast list rendering
     vendor_name = db.Column(db.String(255), nullable=True)
@@ -178,13 +198,38 @@ class Extraction(db.Model):
     data = db.Column(db.Text, nullable=False)
 
     status = db.Column(db.String(20), nullable=False, default="completed")  # completed|failed
+
+    # ── Processing record ───────────────────────────────────────────────────
+    # Denormalized so the history list can FILTER and SORT in SQL. Validation
+    # itself is still recomputed from the document on read (so it stays correct
+    # after an edit); this column is the *last known* verdict, kept in step
+    # whenever the document is written.
+    validation_status = db.Column(db.String(30), nullable=True, index=True)
+    validation_issue_count = db.Column(db.Integer, nullable=False, default=0)
+    # How many fields the extractor actually filled, for "was this a good read?"
+    extracted_field_count = db.Column(db.Integer, nullable=False, default=0)
+    # Wall-clock milliseconds spent in extraction. Surfaces a slow model or a
+    # pathological document without digging through logs.
+    processing_ms = db.Column(db.Integer, nullable=True)
+    # Why a failed extraction failed, in words, so History can show it without
+    # the client parsing the stored payload.
+    error_message = db.Column(db.String(500), nullable=True)
+    # Review state: set when a human has looked at and accepted the document.
+    reviewed_at = db.Column(db.DateTime, nullable=True, index=True)
+    reviewed_by_user_id = db.Column(db.String, db.ForeignKey("users.id"), nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
     # Soft delete: a deleted extraction is hidden from History and its uploaded
     # files are removed, but the row is kept so it still counts toward monthly
     # usage (deleting history must not reset a plan/statement quota).
     deleted_at = db.Column(db.DateTime, nullable=True, index=True)
 
-    def list_item(self) -> dict:
+    def list_item(self, uploader=None, duplicate_count=0) -> dict:
+        """Row shape for the history list.
+
+        Carries enough to triage without opening anything: what it is, whether
+        it processed, whether it validates, whether it may be a duplicate, who
+        uploaded it and how long it took.
+        """
         return {
             "id": self.id,
             "docType": self.doc_type,
@@ -194,9 +239,143 @@ class Extraction(db.Model):
             "invoiceNumber": self.invoice_number,
             "invoiceDate": self.invoice_date,
             "currency": self.currency,
-            "total": self.total,
+            "total": as_json(self.total),
             "status": self.status,
             "createdAt": self.created_at.isoformat() + "Z",
+            # Processing record
+            "validationStatus": self.validation_status,
+            "issueCount": self.validation_issue_count or 0,
+            "fieldCount": self.extracted_field_count or 0,
+            "processingMs": self.processing_ms,
+            "errorMessage": self.error_message,
+            "duplicateCount": duplicate_count,
+            "reviewed": self.reviewed_at is not None,
+            "reviewedAt": (
+                self.reviewed_at.isoformat() + "Z" if self.reviewed_at else None
+            ),
+            "uploadedBy": uploader,
+        }
+
+
+class DuplicateMatch(db.Model):
+    """A suspected duplicate between two extractions in the same organization.
+
+    Recorded rather than recomputed so a human decision sticks: once someone
+    says "these are two genuine invoices that happen to match", that answer
+    must survive the next upload and the next page load.
+
+    Deliberately never deletes or rejects anything. Paying an invoice twice is
+    expensive, but refusing a legitimate one automatically is worse - a supplier
+    really can send two invoices on the same day for the same amount.
+    """
+    __tablename__ = "duplicate_matches"
+    __table_args__ = (
+        # One verdict per pair per reason, so re-running detection cannot pile
+        # up copies of the same finding.
+        db.UniqueConstraint(
+            "extraction_id", "duplicate_of_id", "reason",
+            name="uq_duplicate_pair_reason",
+        ),
+    )
+
+    id = db.Column(db.String, primary_key=True, default=_uuid)
+    organization_id = db.Column(
+        db.String, db.ForeignKey("organizations.id"), nullable=False, index=True
+    )
+    # The newly uploaded document...
+    extraction_id = db.Column(
+        db.String, db.ForeignKey("extractions.id"), nullable=False, index=True
+    )
+    # ...and the earlier one it resembles.
+    duplicate_of_id = db.Column(
+        db.String, db.ForeignKey("extractions.id"), nullable=False, index=True
+    )
+
+    # Which rule fired (see duplicates.py), and how strong it is, 0..1.
+    reason = db.Column(db.String(40), nullable=False)
+    score = db.Column(db.Float, nullable=False, default=1.0)
+    # Human-readable explanation, built when the match is found so the UI does
+    # not have to reconstruct the reasoning later.
+    detail = db.Column(db.String(500), nullable=True)
+
+    # pending | confirmed (it IS a duplicate) | dismissed (it is not)
+    status = db.Column(db.String(20), nullable=False, default="pending", index=True)
+    resolved_by_user_id = db.Column(db.String, db.ForeignKey("users.id"), nullable=True)
+    resolved_at = db.Column(db.DateTime, nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+
+    def public(self, other=None) -> dict:
+        data = {
+            "id": self.id,
+            "extractionId": self.extraction_id,
+            "duplicateOfId": self.duplicate_of_id,
+            "reason": self.reason,
+            "score": self.score,
+            "detail": self.detail,
+            "status": self.status,
+            "createdAt": self.created_at.isoformat() + "Z" if self.created_at else None,
+        }
+        if other is not None:
+            # The document being pointed at, so the reviewer can compare without
+            # a second request.
+            data["match"] = {
+                "id": other.id,
+                "fileName": other.file_name,
+                "vendorName": other.vendor_name,
+                "invoiceNumber": other.invoice_number,
+                "invoiceDate": other.invoice_date,
+                "total": str(other.total) if other.total is not None else None,
+                "currency": other.currency,
+                "status": other.status,
+                "createdAt": (
+                    other.created_at.isoformat() + "Z" if other.created_at else None
+                ),
+            }
+        return data
+
+
+class FieldCorrection(db.Model):
+    """One field a person changed on an extracted document.
+
+    The audit trail the brief asks for, and the reason it matters beyond
+    compliance: these rows are the only honest record of where the extractor
+    gets things wrong. Aggregated later they say "supplier tax ID is corrected
+    40% of the time", which is how the prompt gets improved - a judgement no
+    amount of reading the model output can give you.
+
+    The ORIGINAL value is kept forever. Correcting a figure must never destroy
+    the evidence of what the document said before someone touched it.
+    """
+    __tablename__ = "field_corrections"
+
+    id = db.Column(db.String, primary_key=True, default=_uuid)
+    organization_id = db.Column(
+        db.String, db.ForeignKey("organizations.id"), nullable=False, index=True
+    )
+    extraction_id = db.Column(
+        db.String, db.ForeignKey("extractions.id"), nullable=False, index=True
+    )
+    user_id = db.Column(db.String, db.ForeignKey("users.id"), nullable=True)
+
+    # Dotted path into the document, e.g. "total" or "line_items.2.unit_price".
+    field_path = db.Column(db.String(120), nullable=False, index=True)
+    # Stored as text: a field may hold a number, a string or null, and the
+    # point is to record exactly what was shown and what replaced it.
+    old_value = db.Column(db.String(500), nullable=True)
+    new_value = db.Column(db.String(500), nullable=True)
+    # Optional free text from the person making the change.
+    reason = db.Column(db.String(500), nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+
+    def public(self, user_label=None) -> dict:
+        return {
+            "id": self.id,
+            "field": self.field_path,
+            "from": self.old_value,
+            "to": self.new_value,
+            "reason": self.reason,
+            "by": user_label,
+            "at": self.created_at.isoformat() + "Z" if self.created_at else None,
         }
 
 

@@ -3,6 +3,8 @@ import { Link } from "react-router-dom";
 import { ArrowRight, FileText } from "lucide-react";
 import { ExtractWorkspace } from "@/components/dashboard/ExtractWorkspace";
 import { UsageMeter } from "@/components/dashboard/UsageMeter";
+import { UsageStats } from "@/components/dashboard/UsageStats";
+import { SetupChecklist } from "@/components/dashboard/SetupChecklist";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth.jsx";
 import { formatDate, formatMoney } from "@/lib/utils";
@@ -37,6 +39,14 @@ export default function DashboardHome() {
           Drop an invoice, receipt or bank statement below and get clean, structured data in seconds.
         </p>
       </div>
+
+      {/* Setup first while it is unfinished; it hides itself once the required
+          steps are done, so it does not become permanent furniture. */}
+      <SetupChecklist />
+
+      {/* Full width above the fold: these are the numbers that tell you
+          whether anything needs doing today. */}
+      <UsageStats />
 
       <div className="grid gap-6 lg:grid-cols-[1fr_300px]">
         <div className="min-w-0">

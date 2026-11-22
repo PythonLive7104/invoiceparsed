@@ -28,6 +28,7 @@ from models import Organization, Payment, ProviderEvent, Subscription, User
 from money import to_decimal
 from plans import PLANS
 from roles import BILLING_MANAGE, BILLING_READ
+from stats import dashboard_stats
 from tenancy import (
     current_organization,
     default_membership,
@@ -48,6 +49,18 @@ _SUCCESS = {s.lower() for s in bachs.SUCCESS_STATUSES}
 @login_required
 def usage():
     return jsonify({"usage": usage_for(current_organization())})
+
+
+@billing_bp.get("/usage/stats")
+@login_required
+def usage_stats():
+    """Processing statistics for the dashboard.
+
+    Not permission-gated beyond membership: every member should be able to see
+    how much of the shared allowance is left and whether anything needs their
+    attention. It exposes counts, never document contents.
+    """
+    return jsonify(dashboard_stats(current_organization()))
 
 
 # ─── Guards ──────────────────────────────────────────────────────────────────

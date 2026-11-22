@@ -228,7 +228,7 @@ export function ExtractWorkspace() {
                   </Button>
                 </div>
                 {result && (
-                  <ResultCard docType={result.docType} invoice={result.invoice} validation={result.validation} extractionId={result.id} fileName={result.fileName} />
+                  <ResultCard docType={result.docType} invoice={result.invoice} validation={result.validation} duplicates={result.duplicates} extractionId={result.id} fileName={result.fileName} />
                 )}
               </>
             )}
@@ -596,6 +596,7 @@ function BatchResults({ items, onReset }) {
             docType={it.result.docType}
             invoice={it.result.invoice}
             validation={it.result.validation}
+            duplicates={it.result.duplicates}
             extractionId={it.result.id}
             fileName={it.result.fileName}
           />

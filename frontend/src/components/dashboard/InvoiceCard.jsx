@@ -28,6 +28,8 @@ import { api, apiError, downloadFile } from "@/lib/api";
 import { DocumentViewer } from "@/components/dashboard/DocumentViewer";
 import { LockedActions } from "@/components/dashboard/LockedActions";
 import { ValidationPanel } from "@/components/dashboard/ValidationPanel";
+import { DuplicateWarning } from "@/components/dashboard/DuplicateWarning";
+import { CorrectionTrail } from "@/components/dashboard/CorrectionTrail";
 
 /** True when at least one of `keys` has a value on `obj`. */
 function hasAny(obj, keys) {
@@ -72,7 +74,7 @@ const setVendor = (setInvoice, key, v) =>
 const setCustomer = (setInvoice, key, v) =>
   setInvoice((inv) => ({ ...inv, customer: { ...inv.customer, [key]: v } }));
 
-export function InvoiceCard({ invoice: initial, extractionId, fileName, validation: initialValidation, initialShowDoc = false, onUpdated, locked = false, onLockedAction }) {
+export function InvoiceCard({ invoice: initial, extractionId, fileName, validation: initialValidation, duplicates: initialDuplicates, corrections: initialCorrections, initialShowDoc = false, splitView = false, onUpdated, locked = false, onLockedAction }) {
   const [invoice, setInvoice] = useState(initial);
   const [saved, setSaved] = useState(initial); // last persisted version (for cancel)
   const [editing, setEditing] = useState(false);
@@ -95,6 +97,8 @@ export function InvoiceCard({ invoice: initial, extractionId, fileName, validati
       setInvoice(data.invoice);
       setSaved(data.invoice);
       setValidation(data.validation ?? null);
+      setDupes(data.duplicates ?? []);
+      setCorrections(data.corrections ?? []);
       setEditing(false);
       setSavingState("saved");
       setTimeout(() => setSavingState("idle"), 2000);
@@ -116,6 +120,8 @@ export function InvoiceCard({ invoice: initial, extractionId, fileName, validati
   // verdict. Holding it in state means correcting a total clears the warning
   // immediately instead of leaving a stale one on screen.
   const [validation, setValidation] = useState(initialValidation ?? null);
+  const [dupes, setDupes] = useState(initialDuplicates ?? []);
+  const [corrections, setCorrections] = useState(initialCorrections ?? []);
   const currency = invoice.currency || "USD";
   // Only the bank fields actually present, in a stable display order.
   const bankRows = Object.entries(BANK_LABELS)
@@ -200,7 +206,7 @@ export function InvoiceCard({ invoice: initial, extractionId, fileName, validati
               >
                 <Pencil size={14} /> Edit
               </button>
-              {extractionId && (
+              {extractionId && !splitView && (
                 <button
                   onClick={() => setShowDoc((s) => !s)}
                   className={cn(
@@ -255,7 +261,7 @@ export function InvoiceCard({ invoice: initial, extractionId, fileName, validati
         </div>
       )}
 
-      {showDoc && extractionId && (
+      {showDoc && extractionId && !splitView && (
         <div className="border-b border-white/[0.06] p-4 sm:p-5">
           <DocumentViewer extractionId={extractionId} />
         </div>
@@ -269,6 +275,15 @@ export function InvoiceCard({ invoice: initial, extractionId, fileName, validati
         <div className="p-5 sm:p-6">
           {/* Above the fields on purpose: the verdict is what tells you whether
               to trust what follows. */}
+          {dupes.length > 0 && extractionId && (
+            <div className="mb-4">
+              <DuplicateWarning
+                extractionId={extractionId}
+                duplicates={dupes}
+                onResolved={setDupes}
+              />
+            </div>
+          )}
           {validation && (
             <div className="mb-5">
               <ValidationPanel validation={validation} />
@@ -479,6 +494,8 @@ export function InvoiceCard({ invoice: initial, extractionId, fileName, validati
               )}
             </div>
           </div>
+
+          <CorrectionTrail corrections={corrections} />
         </div>
       )}
     </div>

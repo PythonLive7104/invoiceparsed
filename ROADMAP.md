@@ -282,7 +282,44 @@ mutates extracted figures.**
 
 *Depends on F2.*
 
-### [ ] P1.3 Duplicate detection
+### [x] P1.3 Duplicate detection
+
+Done. Four rules in `duplicates.py`, strongest first, with the first one that
+fires for a pair being the one reported — so an identical file is flagged once
+as an exact match rather than three times under three rules:
+
+| Rule | Signal | Score |
+|---|---|---|
+| `exact_file` | SHA-256 of the uploaded bytes | 1.0 |
+| `same_number` | Same supplier + invoice number | 0.95 |
+| `same_amount_date` | Same supplier, total and invoice date | 0.8 |
+| `similar` | Same supplier and amount a few days apart, or the same number under a differently-read supplier name | 0.55 |
+
+Supplier names are normalized (case, punctuation and company-form suffixes
+dropped, so "ACME Supplies Ltd." matches "acme supplies limited") and invoice
+numbers compared ignoring separators ("INV-2026-001" = "inv2026001").
+
+**Nothing is ever deleted, rejected or merged.** A supplier can legitimately
+bill the same amount twice in a day, and refusing a real invoice is worse than
+the error being prevented. Matches are recorded in `duplicate_matches` for a
+human: *Yes, duplicate* records the decision and still deletes nothing;
+*Not a duplicate* dismisses it permanently, because re-showing a warning
+someone has already judged teaches them to ignore all of them.
+
+Detection is organization-scoped — a match across tenants would not be a
+duplicate, it would be a data leak. There is a test for that.
+
+Surfaced as a panel above the validation verdict on the invoice card (if it may
+already be paid, that outranks "the arithmetic is off"), with a Compare link to
+the other document, plus `GET /api/duplicates` as a review queue.
+
+24 tests, weighted as much toward *not* flagging genuine invoices as toward
+catching real duplicates.
+
+*Still open:* no fuzzy document-image comparison (rule 4 of the brief's
+"potentially similar" is handled by name/amount/date proximity, not by
+comparing the documents themselves), and the review queue has no dedicated page
+yet.
 
 Four levels: exact file duplicate (SHA-256 of the bytes — cheap, so do it
 first); same supplier + invoice number; same supplier + amount + date; fuzzy
@@ -290,7 +327,31 @@ similarity. Flag for review, never auto-delete or auto-reject. Show both
 documents side by side with the matching reason, upload dates and statuses, and
 let an authorized user confirm or dismiss.
 
-### [ ] P1.4 Review experience
+### [x] P1.4 Review experience
+
+Done. Split-screen on the detail page: original document sticky on the left,
+extracted fields on the right, stacking below xl where side-by-side would make
+both halves unusable. A toggle switches to full-width fields.
+
+**Audit trail.** Every manual change is recorded in `field_corrections` with
+the original value, the new value, who, when and an optional reason. The
+original is never overwritten - correcting a figure must not destroy the
+evidence of what the document said. Paths identify the exact cell
+(`line_items.2.unit_price`), not "line items changed".
+
+Both sides are normalized before diffing, so changing `100` to `"100.00"` is
+not recorded as an edit, and null vs "" is treated as the same absence -
+otherwise re-saving an untouched form would manufacture a trail of phantom
+edits and poison the signal these rows exist to provide. (Aggregated, they say
+where extraction actually goes wrong, which is how the prompt gets improved.)
+
+Editing marks the document reviewed, which feeds the "awaiting review" count.
+
+14 tests.
+
+*Still open:* no field-to-document highlighting - the `chat.completions`
+pipeline returns no bounding boxes, so that needs a layout-aware OCR pass
+(a cost and vendor decision, noted under Open Decisions).
 
 Split-screen: original document left, extracted fields and validation results
 right. Confidence indicators, validation and duplicate warnings, editable fields
@@ -302,14 +363,69 @@ layout-aware OCR pass or acceptance that highlighting ships later.
 Audit trail on every manual correction: original value, corrected value, user,
 timestamp, optional reason.
 
-### [ ] P1.5 Processing history
+### [x] P1.5 Processing history
+
+Done. The list was a flat 300 rows with browser-side search, which meant that
+past a few hundred documents the older ones were not just hidden but
+**unsearchable** — the data was there and the user could not reach it.
+
+Now server-side: search across file name, supplier and invoice number; filters
+for processing status, validation status, document type, reviewed state,
+supplier, currency, date range and amount range; sortable on six columns via an
+allow-list (the key reaches `ORDER BY`, so it is never taken verbatim);
+paginated at 25 with a hard cap of 100 per page.
+
+Each row carries enough to triage without opening it — validation badge, issue
+count, duplicate count, field count, processing time, uploader, and the error
+message for a failed run. That needed denormalized columns
+(`validation_status`, `validation_issue_count`, `extracted_field_count`,
+`processing_ms`, `error_message`, `reviewed_at`), written whenever a document
+is created or edited. Validation itself is still recomputed on read, so an
+edited invoice always shows a current verdict; the column is the last known one
+and exists so "show me everything needing review" is one SQL query rather than
+loading and validating every row.
+
+`GET /api/extractions/export` downloads the **currently filtered** rows as CSV —
+what you see is what you export.
+
+Adding `reviewed_by_user_id` gave `Extraction` two foreign keys to `users`, and
+SQLAlchemy refused the ambiguous `User.extractions` join until it was told which
+one to use. Worth knowing before adding a third.
+
+24 tests.
+
+*Still open:* no saved views, and Excel export of the history list (only CSV;
+per-document XLSX already exists).
 
 Columns: document, upload date, processing / extraction / validation / review
 status, field count, warning count, duration, errors, uploader. Filters: date
 range, status, supplier, currency, amount range. Server-side pagination and
 search, replacing today's hard 300-row cap. CSV and Excel export.
 
-### [ ] P1.6 Usage reporting
+### [x] P1.6 Usage reporting
+
+Done. `GET /api/usage/stats` returns processed/failed/in-progress counts,
+success rate, average processing time, awaiting-review and unresolved-duplicate
+counts, a validation breakdown, a 30-day activity trend, and the plan
+allowance.
+
+The allowance comes from `usage.py` unchanged - the same code billing enforces.
+A dashboard that said 94 while billing said 96 would make both numbers
+worthless, and there is a test asserting the two endpoints agree exactly.
+
+Some deliberate choices: the success rate excludes documents still running (a
+rate that dips mid-extraction looks like a reliability problem that is not
+happening) and is `null` rather than 0 before anything has finished. Average
+time counts completed runs only, or one 300s timeout would dominate it.
+"Awaiting review" excludes documents someone has already opened, and excludes
+failures - those need re-running, not reviewing.
+
+Shown as tiles on the dashboard; the action tiles only appear when there is
+something to act on, since tiles reading zero teach people to stop looking.
+They deep-link into History, which now reads its filters from the URL.
+
+18 tests, including that failed and deleted documents do not distort the
+allowance.
 
 Uploaded / processed / failed / awaiting review, pages processed, monthly usage,
 remaining allowance, average processing time, success rate. Must reconcile
@@ -360,7 +476,29 @@ handling, cancellation, renewal, usage notifications.
 
 **Blocked on the Bachs migration — see Open Decisions.**
 
-### [ ] P1.8 Onboarding
+### [x] P1.8 Onboarding
+
+Done. A setup checklist on the dashboard: confirm email, name the organization,
+add business details, choose a plan, process a first document, review it.
+
+**Derived, not stored.** The steps are computed from real state on every
+request, so the checklist can go backwards - delete your only document and
+"Process your first document" unticks itself, because it is true again. A
+stored wizard position starts lying the moment anything changes underneath it.
+The only thing persisted is `onboarding_dismissed_at`, which is a preference
+and cannot be derived. Dismissing hides the panel without claiming the work was
+done.
+
+Business details and plan choice are optional and do not block completion -
+requiring them would leave the checklist permanently unfinished for someone
+happily on the free plan.
+
+`GET/PATCH /api/organizations/current` manages the profile, validating country
+and currency codes rather than storing nonsense that would quietly corrupt
+reports later. Changing settings needs `organization:settings`; reading the
+checklist does not.
+
+23 tests.
 
 Account → email verification → create organization → organization details →
 plan or trial → first upload → review → dashboard orientation. Interactive first
