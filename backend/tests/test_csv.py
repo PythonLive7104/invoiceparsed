@@ -22,11 +22,35 @@ def _invoice():
 
 
 def test_headers_use_quickbooks_terminology():
-    assert HEADERS[:8] == [
+    """QuickBooks maps columns by header NAME, not position, so this asserts the
+    vocabulary rather than a fixed prefix - otherwise adding a column breaks the
+    test without breaking the export."""
+    assert {
         "Vendor", "Vendor Address", "Vendor Email",
         "Bill No", "Bill Date", "Due Date", "Currency", "Terms",
-    ]
-    assert {"Description", "Qty", "Rate", "Amount", "Subtotal", "Tax", "Total"} <= set(HEADERS)
+        "Description", "Qty", "Rate", "Amount",
+        "Subtotal", "Tax", "Total",
+    } <= set(HEADERS)
+
+
+def test_headers_cover_the_full_extracted_field_set():
+    """Every field the extractor now captures should be exportable; a field that
+    is extracted but never reaches the user's spreadsheet is invisible work."""
+    assert {
+        "Vendor Phone", "Vendor Tax ID", "Invoice Type", "PO Reference",
+        "Customer", "Customer Tax ID", "Product", "Line Discount", "Tax Rate",
+        "Discount", "Tax %", "Shipping", "Other Charges",
+        "Amount Paid", "Balance Due",
+    } <= set(HEADERS)
+
+
+def test_every_row_matches_the_header_width():
+    """A short row silently shifts every later column in the spreadsheet."""
+    from csv_util import invoice_rows
+    for invoice in ({}, _invoice(), {"line_items": []}):
+        headers, rows = invoice_rows(invoice)
+        for row in rows:
+            assert len(row) == len(headers)
 
 
 def test_one_row_per_line_item_totals_only_on_first():

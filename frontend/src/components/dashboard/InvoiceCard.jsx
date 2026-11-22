@@ -18,12 +18,58 @@ import {
   Loader2,
   Image as ImageIcon,
   AlertCircle,
+  Mail,
+  Phone,
+  Landmark,
 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { cn, formatMoney, numericInput } from "@/lib/utils.js";
 import { api, apiError, downloadFile } from "@/lib/api";
 import { DocumentViewer } from "@/components/dashboard/DocumentViewer";
 import { LockedActions } from "@/components/dashboard/LockedActions";
+
+/** True when at least one of `keys` has a value on `obj`. */
+function hasAny(obj, keys) {
+  return !!obj && keys.some((k) => present(obj[k]));
+}
+
+/**
+ * True when a value is worth showing as a row.
+ *
+ * Deliberately not `!!value`: money arrives as an exact decimal STRING, so a
+ * real zero is "0.00" (truthy) while a numeric 0 is falsy. Using truthiness
+ * would hide a genuine zero discount. Only null/undefined/"" count as absent.
+ */
+function present(value) {
+  return value !== null && value !== undefined && value !== "";
+}
+
+const BANK_LABELS = {
+  bank_name: "Bank",
+  account_name: "Account name",
+  account_number: "Account number",
+  iban: "IBAN",
+  swift: "SWIFT/BIC",
+  sort_code: "Sort code",
+};
+
+/** Section heading + responsive grid, shared by the detail blocks below. */
+function Section({ title, children }) {
+  return (
+    <div className="mt-4">
+      <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+        {title}
+      </h4>
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{children}</div>
+    </div>
+  );
+}
+
+const setVendor = (setInvoice, key, v) =>
+  setInvoice((inv) => ({ ...inv, vendor: { ...inv.vendor, [key]: v } }));
+
+const setCustomer = (setInvoice, key, v) =>
+  setInvoice((inv) => ({ ...inv, customer: { ...inv.customer, [key]: v } }));
 
 export function InvoiceCard({ invoice: initial, extractionId, fileName, initialShowDoc = false, onUpdated, locked = false, onLockedAction }) {
   const [invoice, setInvoice] = useState(initial);
@@ -65,6 +111,10 @@ export function InvoiceCard({ invoice: initial, extractionId, fileName, initialS
   }
 
   const currency = invoice.currency || "USD";
+  // Only the bank fields actually present, in a stable display order.
+  const bankRows = Object.entries(BANK_LABELS)
+    .map(([key, label]) => [label, invoice.vendor?.bank_details?.[key]])
+    .filter(([, value]) => present(value));
   const conf = invoice.confidence || {};
   const scores = Object.values(conf).filter((v) => typeof v === "number");
   const overall = scores.length ? scores.reduce((a, b) => a + b, 0) / scores.length : null;
@@ -230,17 +280,66 @@ export function InvoiceCard({ invoice: initial, extractionId, fileName, initialS
             <MetaField icon={<FileText size={15} />} label="Payment terms" value={invoice.payment_terms}
               editing={editing} confidence={conf.payment_terms}
               onChange={(v) => setInvoice((inv) => ({ ...inv, payment_terms: v }))} />
+            {/* A PO reference is how this invoice will later be matched to a
+                purchase order, so it is shown even when absent while editing. */}
+            {(invoice.purchase_order_reference || editing) && (
+              <MetaField icon={<Hash size={15} />} label="PO reference"
+                value={invoice.purchase_order_reference}
+                editing={editing} confidence={conf.purchase_order_reference}
+                onChange={(v) => setInvoice((inv) => ({ ...inv, purchase_order_reference: v }))} />
+            )}
           </div>
 
-          {(invoice.vendor?.address || invoice.vendor?.email || editing) && (
-            <div className="mt-3 grid gap-3 sm:grid-cols-2">
-              <MetaField icon={<Building2 size={15} />} label="Vendor address" value={invoice.vendor?.address}
+          {(hasAny(invoice.vendor, ["address", "email", "phone", "tax_id", "registration_number"]) || editing) && (
+            <Section title="Vendor">
+              <MetaField icon={<Building2 size={15} />} label="Address" value={invoice.vendor?.address}
                 editing={editing} confidence={conf.vendor}
-                onChange={(v) => setInvoice((inv) => ({ ...inv, vendor: { ...inv.vendor, address: v } }))} />
-              <MetaField icon={<Building2 size={15} />} label="Vendor email" value={invoice.vendor?.email}
+                onChange={(v) => setVendor(setInvoice, "address", v)} />
+              <MetaField icon={<Mail size={15} />} label="Email" value={invoice.vendor?.email}
                 editing={editing} confidence={conf.vendor}
-                onChange={(v) => setInvoice((inv) => ({ ...inv, vendor: { ...inv.vendor, email: v } }))} />
-            </div>
+                onChange={(v) => setVendor(setInvoice, "email", v)} />
+              <MetaField icon={<Phone size={15} />} label="Phone" value={invoice.vendor?.phone}
+                editing={editing} confidence={conf.vendor}
+                onChange={(v) => setVendor(setInvoice, "phone", v)} />
+              <MetaField icon={<Landmark size={15} />} label="Tax ID" value={invoice.vendor?.tax_id}
+                editing={editing} confidence={conf.vendor}
+                onChange={(v) => setVendor(setInvoice, "tax_id", v)} />
+              <MetaField icon={<Landmark size={15} />} label="Reg. number"
+                value={invoice.vendor?.registration_number}
+                editing={editing} confidence={conf.vendor}
+                onChange={(v) => setVendor(setInvoice, "registration_number", v)} />
+            </Section>
+          )}
+
+          {/* Who was billed. Distinguishes an invoice you RECEIVED from one you
+              issued, which decides whether it is a payable at all. */}
+          {(hasAny(invoice.customer, ["name", "address", "email", "phone", "tax_id"]) || editing) && (
+            <Section title="Billed to">
+              <MetaField icon={<Building2 size={15} />} label="Customer" value={invoice.customer?.name}
+                editing={editing} confidence={conf.customer}
+                onChange={(v) => setCustomer(setInvoice, "name", v)} />
+              <MetaField icon={<Building2 size={15} />} label="Address" value={invoice.customer?.address}
+                editing={editing} confidence={conf.customer}
+                onChange={(v) => setCustomer(setInvoice, "address", v)} />
+              <MetaField icon={<Mail size={15} />} label="Email" value={invoice.customer?.email}
+                editing={editing} confidence={conf.customer}
+                onChange={(v) => setCustomer(setInvoice, "email", v)} />
+              <MetaField icon={<Landmark size={15} />} label="Tax ID" value={invoice.customer?.tax_id}
+                editing={editing} confidence={conf.customer}
+                onChange={(v) => setCustomer(setInvoice, "tax_id", v)} />
+            </Section>
+          )}
+
+          {/* Read-only: payment instructions are exactly what invoice-redirection
+              fraud alters, so they are displayed for verification but never
+              edited here. */}
+          {bankRows.length > 0 && (
+            <Section title="Payment details">
+              {bankRows.map(([label, value]) => (
+                <MetaField key={label} icon={<Landmark size={15} />} label={label}
+                  value={value} editing={false} confidence={conf.vendor} />
+              ))}
+            </Section>
           )}
 
           <div className="mt-6">
@@ -332,7 +431,18 @@ export function InvoiceCard({ invoice: initial, extractionId, fileName, initialS
           <div className="mt-5 flex justify-end">
             <div className="w-full max-w-xs space-y-1.5">
               <TotalRow label="Subtotal" value={formatMoney(invoice.subtotal, currency)} confidence={conf.subtotal} />
-              <TotalRow label="Tax" value={formatMoney(invoice.tax, currency)} confidence={conf.tax} />
+              {present(invoice.discount) && (
+                <TotalRow label="Discount" value={formatMoney(invoice.discount, currency)} confidence={conf.discount} />
+              )}
+              <TotalRow
+                label={present(invoice.tax_percentage) ? `Tax (${invoice.tax_percentage}%)` : "Tax"}
+                value={formatMoney(invoice.tax, currency)} confidence={conf.tax} />
+              {present(invoice.shipping) && (
+                <TotalRow label="Shipping" value={formatMoney(invoice.shipping, currency)} confidence={conf.shipping} />
+              )}
+              {present(invoice.other_charges) && (
+                <TotalRow label="Other charges" value={formatMoney(invoice.other_charges, currency)} confidence={conf.other_charges} />
+              )}
               <div className="flex items-center justify-between border-t border-white/10 pt-2.5">
                 <span className="flex items-center gap-2 text-sm font-semibold text-white">
                   Total <ConfidenceDot score={conf.total} />
@@ -341,6 +451,19 @@ export function InvoiceCard({ invoice: initial, extractionId, fileName, initialS
                   {formatMoney(invoice.total, currency)}
                 </span>
               </div>
+              {present(invoice.amount_paid) && (
+                <TotalRow label="Amount paid" value={formatMoney(invoice.amount_paid, currency)} confidence={conf.amount_paid} />
+              )}
+              {present(invoice.balance_due) && (
+                <div className="flex items-center justify-between border-t border-white/10 pt-2.5">
+                  <span className="flex items-center gap-2 text-sm font-semibold text-amber-300">
+                    Balance due <ConfidenceDot score={conf.balance_due} />
+                  </span>
+                  <span className="text-base font-semibold text-amber-300 tabular-nums">
+                    {formatMoney(invoice.balance_due, currency)}
+                  </span>
+                </div>
+              )}
             </div>
           </div>
         </div>

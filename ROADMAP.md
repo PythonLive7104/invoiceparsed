@@ -232,26 +232,42 @@ unaffected.
 
 ## Phase 1 — Make the existing product reliable (highest priority)
 
-### [ ] P1.1 Extraction accuracy and coverage
+### [x] P1.1 Extraction accuracy and coverage
 
-Extend the invoice schema to the full target set: invoice identification
-(number, date, due date, type, PO reference, currency, status); supplier
-(name, address, email, phone, tax ID, registration number, bank details);
-**customer** (name, address, email, tax ID); financials (subtotal, discount,
-tax amount, tax percentage, shipping, other charges, total, amount paid,
-outstanding balance); line items (description, product name, quantity, unit
-price, discount, tax rate, line total).
+Done. The invoice schema went from 10 top-level fields to 19, and the prompt was
+rewritten to describe all of them.
 
-Keep the existing parallel `confidence` object rather than switching to
-per-field `{value, confidence}` wrappers — it works with OpenAI strict mode, and
-the brief explicitly allows adapting the structure where a better approach
-exists. Extend it to per-line-item confidence.
+**New:** `customer` (name, address, email, phone, tax ID), vendor phone / tax ID
+/ registration number / **bank details** (bank, account name and number, IBAN,
+SWIFT, sort code), `invoice_type` (invoice / credit_note / debit_note /
+proforma / receipt), `purchase_order_reference`, `discount`, `tax_percentage`,
+`shipping`, `other_charges`, `amount_paid`, `balance_due`, and per-line
+`product_name`, `discount` and `tax_rate`.
 
-Reliability: retry transient AI failures, handle `message.refusal`, set an
-explicit client timeout (currently unset — the default is 600s, twice the
-gunicorn timeout, so the worker dies first), log extraction failures, and
-**recompute every total deterministically in Python** rather than trusting the
-model's arithmetic.
+Why these in particular: vendor bank details are what invoice-redirection fraud
+alters, so they are captured and shown read-only for verification;
+`invoice_type` stops a credit note being counted as a charge; and
+`purchase_order_reference` is the key P2.3 matching will join on.
+
+The prompt now also states who is vendor vs customer explicitly, warns about
+regional date ambiguity (03/04 differs by country), handles parenthesised
+negatives, and tells the model to leave `amount_paid` / `balance_due` null
+rather than computing them - the application does that deterministically.
+
+Confidence stays a parallel object rather than per-field `{value, confidence}`
+wrappers: OpenAI strict mode requires every property in `required`, so wrapping
+would double the schema and force a score for fields never seen. There is a test
+asserting the schema stays strict-mode valid, since a violation is rejected at
+request time and breaks extraction outright.
+
+Surfaced end to end: the invoice card shows Vendor / Billed to / Payment details
+sections and the full charge breakdown, and CSV export grew from 15 columns to
+30. 16 tests follow a fully-populated invoice from model output through
+normalize, storage, API and CSV.
+
+*Still open:* no deterministic re-check of the model's arithmetic yet (that
+belongs with the P1.2 validation engine), no OpenAI client timeout or retry, and
+`purchase_order_reference` is not yet a denormalized column for matching.
 
 ### [ ] P1.2 Validation engine
 

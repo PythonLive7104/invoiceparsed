@@ -7,11 +7,23 @@ builders are shared with the Excel (.xlsx) exporter (xlsx_util.py).
 import csv
 import io
 
+# QuickBooks bill-import terminology (Vendor, Bill No, Bill Date, Terms) so the
+# file maps cleanly on import, with the fields QuickBooks does not model added
+# alongside. Columns are grouped by subject - vendor, document, customer, line,
+# totals - rather than by when they were added.
+#
+# Reordering is safe for QuickBooks itself, which maps columns by HEADER NAME
+# during import setup, not by position. It would still disturb anyone with a
+# saved mapping in another tool, so once this export has real users in the
+# wild, prefer appending.
 HEADERS = [
-    "Vendor", "Vendor Address", "Vendor Email",
+    "Vendor", "Vendor Address", "Vendor Email", "Vendor Phone", "Vendor Tax ID",
     "Bill No", "Bill Date", "Due Date", "Currency", "Terms",
-    "Description", "Qty", "Rate", "Amount",
-    "Subtotal", "Tax", "Total",
+    "Invoice Type", "PO Reference",
+    "Customer", "Customer Tax ID",
+    "Description", "Product", "Qty", "Rate", "Line Discount", "Tax Rate", "Amount",
+    "Subtotal", "Discount", "Tax", "Tax %", "Shipping", "Other Charges",
+    "Total", "Amount Paid", "Balance Due",
 ]
 
 RECEIPT_HEADERS = [
@@ -27,17 +39,35 @@ STATEMENT_HEADERS = ["Date", "Description", "Debit", "Credit", "Balance", "Refer
 # ─── Row builders (header + rows), shared by CSV and XLSX exporters ───────────
 def invoice_rows(inv: dict):
     vendor = inv.get("vendor") or {}
+    customer = inv.get("customer") or {}
     base = [
         vendor.get("name"), vendor.get("address"), vendor.get("email"),
+        vendor.get("phone"), vendor.get("tax_id"),
         inv.get("invoice_number"), inv.get("invoice_date"), inv.get("due_date"),
         inv.get("currency"), inv.get("payment_terms"),
+        inv.get("invoice_type"), inv.get("purchase_order_reference"),
+        customer.get("name"), customer.get("tax_id"),
     ]
-    summary = [inv.get("subtotal"), inv.get("tax"), inv.get("total")]
-    items = inv.get("line_items") or [{"description": "", "quantity": None, "unit_price": None, "amount": None}]
+    # Invoice-level totals belong to the document, not to any one line, so they
+    # appear on the first row only. Repeating them would make a SUM over the
+    # column multiply the invoice by its line count.
+    summary = [
+        inv.get("subtotal"), inv.get("discount"), inv.get("tax"),
+        inv.get("tax_percentage"), inv.get("shipping"), inv.get("other_charges"),
+        inv.get("total"), inv.get("amount_paid"), inv.get("balance_due"),
+    ]
+    blank_summary = [""] * len(summary)
+
+    items = inv.get("line_items") or [{}]
     rows = []
     for idx, item in enumerate(items):
-        row = base + [item.get("description"), item.get("quantity"), item.get("unit_price"), item.get("amount")]
-        row += summary if idx == 0 else ["", "", ""]  # totals only on first row
+        item = item or {}
+        row = base + [
+            item.get("description"), item.get("product_name"),
+            item.get("quantity"), item.get("unit_price"),
+            item.get("discount"), item.get("tax_rate"), item.get("amount"),
+        ]
+        row += summary if idx == 0 else blank_summary
         rows.append(row)
     return HEADERS, rows
 
