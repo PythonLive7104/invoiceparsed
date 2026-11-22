@@ -100,7 +100,7 @@ export default function CheckoutReturn() {
       ? plan === intendedPlan
       : plan && plan !== "free";
     if (activated) setState("success");
-  }, [user, state, intendedPlan]);
+  }, [plan, state, intendedPlan]);
 
   // Fire the revenue event once, whichever path confirmed the charge.
   const trackedRef = useRef(false);
@@ -113,7 +113,7 @@ export default function CheckoutReturn() {
         confirmed: state === "success",
       });
     }
-  }, [state, intendedPlan, user]);
+  }, [state, intendedPlan, plan]);
 
   const planName = PLANS[intendedPlan]?.name || (intendedPlan ?? "your");
 

@@ -16,7 +16,7 @@ import { useAuth, apiError } from "@/lib/auth.jsx";
 import { formatDate } from "@/lib/utils";
 
 export default function Settings() {
-  const { user, plan } = useAuth();
+  const { user } = useAuth();
   return (
     <div className="space-y-8">
       <header>
@@ -213,7 +213,7 @@ function PasswordCard({ hasPassword }) {
 }
 
 function PlanCard() {
-  const { user, usage } = useAuth();
+  const { user, plan, usage } = useAuth();
   return (
     <Card icon={CreditCard} title="Plan & usage" description="Your current subscription.">
       <div className="flex flex-wrap items-center justify-between gap-4">

@@ -96,6 +96,14 @@ jobs:
         # install at all. plugin-react is now 6.x, which supports vite 8.
         run: npm ci
 
+      - name: Lint
+        # no-undef is the rule that matters here. This is plain JS with no type
+        # checker, so a reference to an identifier that does not exist builds
+        # perfectly and only fails in the browser - which is how
+        # "plan is not defined" reached production. A green `vite build` is not
+        # evidence that the app runs.
+        run: npm run lint
+
       - name: Tests
         run: npm test
 

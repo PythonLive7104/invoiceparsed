@@ -45,10 +45,6 @@ export function TryItFree() {
     return () => io.disconnect();
   }, [active]);
 
-  // Signed-in visitors have the real thing in their dashboard — don't offer them
-  // a one-shot anonymous demo.
-  if (user) return null;
-
   // Asked for once the section is in play, so it stays off the critical path.
   // A failure is non-fatal: assume available and let the POST report the truth.
   useEffect(() => {
@@ -62,6 +58,14 @@ export function TryItFree() {
       cancelled = true;
     };
   }, [active, demo, user]);
+
+  // Signed-in visitors have the real thing in their dashboard, so the section is
+  // dropped for them. This return must stay BELOW every hook: React matches
+  // hooks by call order, so returning earlier on some renders and not others
+  // changes how many hooks run and crashes with "Rendered fewer hooks than
+  // expected" (minified React error #300). The effects above already no-op for
+  // a signed-in user.
+  if (user) return null;
 
   // Server says the demo is off (or has no model key) — drop the whole section
   // rather than leaving a heading above an empty box.
