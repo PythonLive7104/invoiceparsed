@@ -27,6 +27,7 @@ import { cn, formatMoney, numericInput } from "@/lib/utils.js";
 import { api, apiError, downloadFile } from "@/lib/api";
 import { DocumentViewer } from "@/components/dashboard/DocumentViewer";
 import { LockedActions } from "@/components/dashboard/LockedActions";
+import { ValidationPanel } from "@/components/dashboard/ValidationPanel";
 
 /** True when at least one of `keys` has a value on `obj`. */
 function hasAny(obj, keys) {
@@ -71,7 +72,7 @@ const setVendor = (setInvoice, key, v) =>
 const setCustomer = (setInvoice, key, v) =>
   setInvoice((inv) => ({ ...inv, customer: { ...inv.customer, [key]: v } }));
 
-export function InvoiceCard({ invoice: initial, extractionId, fileName, initialShowDoc = false, onUpdated, locked = false, onLockedAction }) {
+export function InvoiceCard({ invoice: initial, extractionId, fileName, validation: initialValidation, initialShowDoc = false, onUpdated, locked = false, onLockedAction }) {
   const [invoice, setInvoice] = useState(initial);
   const [saved, setSaved] = useState(initial); // last persisted version (for cancel)
   const [editing, setEditing] = useState(false);
@@ -93,6 +94,7 @@ export function InvoiceCard({ invoice: initial, extractionId, fileName, initialS
       const { data } = await api.patch(`/api/extractions/${extractionId}`, { invoice });
       setInvoice(data.invoice);
       setSaved(data.invoice);
+      setValidation(data.validation ?? null);
       setEditing(false);
       setSavingState("saved");
       setTimeout(() => setSavingState("idle"), 2000);
@@ -110,6 +112,10 @@ export function InvoiceCard({ invoice: initial, extractionId, fileName, initialS
     setSavingState("idle");
   }
 
+  // The server recomputes validation on every read, so a save returns a fresh
+  // verdict. Holding it in state means correcting a total clears the warning
+  // immediately instead of leaving a stale one on screen.
+  const [validation, setValidation] = useState(initialValidation ?? null);
   const currency = invoice.currency || "USD";
   // Only the bank fields actually present, in a stable display order.
   const bankRows = Object.entries(BANK_LABELS)
@@ -261,6 +267,13 @@ export function InvoiceCard({ invoice: initial, extractionId, fileName, initialS
         </pre>
       ) : (
         <div className="p-5 sm:p-6">
+          {/* Above the fields on purpose: the verdict is what tells you whether
+              to trust what follows. */}
+          {validation && (
+            <div className="mb-5">
+              <ValidationPanel validation={validation} />
+            </div>
+          )}
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             <MetaField icon={<Building2 size={15} />} label="Vendor" value={invoice.vendor?.name}
               editing={editing} confidence={conf.vendor}

@@ -481,9 +481,35 @@ def test_create_checkout_refuses_the_free_plan():
 
 
 def test_create_checkout_surfaces_an_api_error(monkeypatch):
+    """The customer gets a plain message, not the provider's JSON. The raw body
+    is logged instead - a 400 full of provider internals tells a buyer nothing
+    they can act on, and can echo their own details back at them."""
     _capture_post(monkeypatch, payload={"error": "bad request"}, status=400)
-    with pytest.raises(bachs.BachsError, match="400"):
+    with pytest.raises(bachs.BachsError, match="could not start the checkout"):
         bachs.create_checkout(_Org(), _User(), "pro", "https://invoiceparsed.com/return")
+
+
+def test_an_unactivated_account_raises_its_own_error(monkeypatch):
+    """Exactly what production hit: the integration works, but the Bachs account
+    is not approved for live payments. Retrying never helps, so it is a distinct
+    error the route answers 503 to."""
+    _capture_post(monkeypatch, status=400, payload={
+        "detail": "This account is not yet approved to accept live payments.",
+        "error_code": "ACCOUNT_NOT_ACTIVATED",
+    })
+    with pytest.raises(bachs.BachsAccountNotActivated, match="not switched on"):
+        bachs.create_checkout(_Org(), _User(), "pro", "https://invoiceparsed.com/return")
+
+
+def test_raw_provider_json_never_reaches_the_customer(monkeypatch):
+    _capture_post(monkeypatch, status=400, payload={
+        "detail": "internal: customer cus_123 blocked by risk rule 44",
+        "error_code": "SOMETHING_NEW",
+    })
+    with pytest.raises(bachs.BachsError) as excinfo:
+        bachs.create_checkout(_Org(), _User(), "pro", "https://invoiceparsed.com/return")
+    assert "cus_123" not in str(excinfo.value)
+    assert "risk rule" not in str(excinfo.value)
 
 
 def test_create_checkout_errors_when_no_url_comes_back(monkeypatch):

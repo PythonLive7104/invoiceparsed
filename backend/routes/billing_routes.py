@@ -127,9 +127,20 @@ def checkout():
             f"{app_url}/dashboard/billing/return?plan={plan}",
             cancel_url=f"{app_url}/dashboard/billing",
         )
+    except bachs.BachsAccountNotActivated as exc:
+        # 503, not 502: this is our own account not being live yet, and it will
+        # stay broken until someone finishes onboarding. A distinct code lets
+        # the UI say something useful instead of "payment failed".
+        logger.error(
+            "Bachs checkout refused - the Bachs account is not activated for "
+            "live payments. Finish onboarding, or set BACHS_SECRET_KEY to an "
+            "sk_sandbox_ key with BACHS_API_BASE=https://sandbox-api.bachs.io "
+            "to test. (user_id=%s)", g.user.id,
+        )
+        return jsonify({"error": str(exc), "code": "PAYMENTS_UNAVAILABLE"}), 503
     except bachs.BachsError as exc:
         logger.warning("Bachs checkout failed for user_id=%s: %s", g.user.id, exc)
-        return jsonify({"error": str(exc)}), 502
+        return jsonify({"error": str(exc), "code": "CHECKOUT_FAILED"}), 502
     return jsonify({"url": url})
 
 

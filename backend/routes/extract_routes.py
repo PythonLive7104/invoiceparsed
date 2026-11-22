@@ -24,6 +24,7 @@ from openai_service import extract_document
 from plans import plan_allows
 from tenancy import current_organization, scoped
 from usage import usage_for
+from validation import validate_invoice
 from webhooks import dispatch
 from xlsx_util import document_to_xlsx
 
@@ -43,7 +44,7 @@ def _safe_name(row) -> str:
 
 
 def _serialize(row: Extraction, data) -> dict:
-    return {
+    payload = {
         "id": row.id,
         "docType": row.doc_type,
         "fileName": row.file_name,
@@ -54,6 +55,12 @@ def _serialize(row: Extraction, data) -> dict:
         "invoice": data,  # the extracted document (invoice or receipt shape)
         "files": list_files(row.id),
     }
+    # Validation is computed on read rather than stored. It is a pure function
+    # of the document, so recomputing keeps it correct after a user edits a
+    # field - a stored verdict would go stale the moment someone fixes a total.
+    if row.doc_type == "invoice" and isinstance(data, dict):
+        payload["validation"] = validate_invoice(data)
+    return payload
 
 
 # ─── Extraction ──────────────────────────────────────────────────────────────

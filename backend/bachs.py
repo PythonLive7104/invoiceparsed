@@ -128,11 +128,53 @@ def _url(path: str) -> str:
     return f"{Config.BACHS_API_BASE.rstrip('/')}{path}"
 
 
+# Provider error codes we can explain better than the provider does. The raw
+# message is still logged; only what the CUSTOMER sees is replaced, because a
+# 400 full of provider JSON tells them nothing they can act on.
+_FRIENDLY_ERRORS = {
+    "ACCOUNT_NOT_ACTIVATED": (
+        "Card payments are not switched on for this site yet. Nothing was "
+        "charged - please try again shortly."
+    ),
+    "IDEMPOTENCY_CONFLICT": (
+        "That checkout was already started. Refresh the page and try again."
+    ),
+    "IDEMPOTENCY_IN_PROGRESS": (
+        "A checkout is already being created. Give it a moment and try again."
+    ),
+}
+
+
+class BachsAccountNotActivated(BachsError):
+    """The Bachs account cannot take live payments yet.
+
+    Its own class because it is a configuration state, not a transient fault:
+    retrying never helps, and the operator - not the customer - has to act.
+    """
+
+
 def _result(resp) -> dict:
     if not resp.is_success:
-        # Never log the response body at error level unredacted in real traffic;
-        # it can echo customer details back into the logs.
-        raise BachsError(f"Bachs API error {resp.status_code}: {resp.text[:500]}")
+        # The full body goes to the log for diagnosis; it is never the message
+        # shown to a customer, since it can carry provider internals and echo
+        # customer details back out.
+        detail = resp.text[:500]
+        logger.warning("Bachs API error %s: %s", resp.status_code, detail)
+
+        code = ""
+        try:
+            body = resp.json()
+            code = (body or {}).get("error_code") or (body or {}).get("code") or ""
+        except ValueError:
+            body = {}
+
+        if code == "ACCOUNT_NOT_ACTIVATED":
+            raise BachsAccountNotActivated(_FRIENDLY_ERRORS[code])
+        if code in _FRIENDLY_ERRORS:
+            raise BachsError(_FRIENDLY_ERRORS[code])
+        raise BachsError(
+            "We could not start the checkout. Nothing was charged - please try again."
+        )
     try:
         return resp.json() or {}
     except ValueError as exc:

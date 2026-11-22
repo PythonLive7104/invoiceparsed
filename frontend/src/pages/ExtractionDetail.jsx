@@ -52,7 +52,7 @@ export default function ExtractionDetail() {
           </div>
 
           {row.status === "completed" && row.invoice ? (
-            <ResultCard docType={row.docType} invoice={row.invoice} extractionId={row.id} fileName={row.fileName} initialShowDoc />
+            <ResultCard docType={row.docType} invoice={row.invoice} validation={row.validation} extractionId={row.id} fileName={row.fileName} initialShowDoc />
           ) : (
             <div className="glass rounded-2xl p-8 text-center">
               <h2 className="text-lg font-semibold text-white">This extraction failed</h2>

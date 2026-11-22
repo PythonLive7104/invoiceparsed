@@ -212,3 +212,32 @@ def test_invoice_level_totals_appear_once(client, app, monkeypatch):
     totals = [r[header.index("Total")] for r in rows[1:]]
     assert totals[0] == "28950.00"
     assert all(t == "" for t in totals[1:])
+
+
+def test_the_api_includes_a_validation_verdict(client, app, monkeypatch):
+    """Validation has to reach the client, or it is invisible work."""
+    body, headers = _extract(client, app, monkeypatch)
+    verdict = body["validation"]
+    assert verdict["status"] in (
+        "valid", "valid_with_warnings", "requires_review", "invalid",
+    )
+    assert "issues" in verdict and "counts" in verdict
+
+
+def test_validation_is_recomputed_after_an_edit(client, app, monkeypatch):
+    """It is derived on read, not stored, so correcting a figure must clear the
+    warning rather than leave a stale verdict behind."""
+    body, headers = _extract(client, app, monkeypatch)
+
+    broken = dict(body["invoice"], total="999999.00")
+    r = client.patch(f"/api/extractions/{body['id']}",
+                     json={"invoice": broken}, headers=headers)
+    assert r.status_code == 200
+    codes = {i["code"] for i in r.get_json()["validation"]["issues"]}
+    assert "total_mismatch" in codes
+
+    fixed = dict(body["invoice"])
+    r = client.patch(f"/api/extractions/{body['id']}",
+                     json={"invoice": fixed}, headers=headers)
+    codes = {i["code"] for i in r.get_json()["validation"]["issues"]}
+    assert "total_mismatch" not in codes
