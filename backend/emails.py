@@ -17,10 +17,26 @@ from money import as_json
 RESEND_ENDPOINT = "https://api.resend.com/emails"
 
 
+# Resend's shared sandbox sender. It is accepted by the API but refused for
+# every recipient except the account owner, so a deploy left on it looks
+# configured and silently delivers nothing to real users.
+SANDBOX_SENDER = "resend.dev"
+
+
 def _send(to: str, subject: str, html: str, reply_to: str | None = None) -> bool:
     if not Config.RESEND_API_KEY:
         print(f"[emails] RESEND_API_KEY not set — skipping email '{subject}' to {to}")
         return False
+    if SANDBOX_SENDER in (Config.RESEND_FROM or ""):
+        # Warn before spending the request. This exact misconfiguration stopped
+        # every password reset and signup confirmation in production, and the
+        # only symptom was a 403 buried in the container logs.
+        print(
+            f"[emails] WARNING: RESEND_FROM is {Config.RESEND_FROM!r}, which is "
+            f"Resend's sandbox sender. It can only deliver to the account "
+            f"owner, so '{subject}' will be refused for {to}. Set RESEND_FROM "
+            f"to an address on a verified domain."
+        )
     payload = {"from": Config.RESEND_FROM, "to": [to], "subject": subject, "html": html}
     if reply_to:
         payload["reply_to"] = reply_to

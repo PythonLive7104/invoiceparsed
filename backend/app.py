@@ -13,6 +13,7 @@ from flask_cors import CORS
 from werkzeug.exceptions import RequestEntityTooLarge
 from werkzeug.middleware.proxy_fix import ProxyFix
 
+import config_checks
 from config import Config
 from extensions import db, limiter, migrate
 from json_provider import DecimalJSONProvider
@@ -60,6 +61,10 @@ def create_app(config_class=Config) -> Flask:
     hops = int(app.config.get("PROXY_HOPS", 1))
     if hops:
         app.wsgi_app = ProxyFix(app.wsgi_app, x_for=hops, x_proto=hops, x_host=hops)
+
+    # Surface settings that are fine locally but break in production, at boot
+    # and in the container logs, rather than days later in a customer's inbox.
+    config_checks.check(config_class)
 
     db.init_app(app)
     # Alembic. Gives `flask db migrate` / `flask db upgrade` and is what keeps a

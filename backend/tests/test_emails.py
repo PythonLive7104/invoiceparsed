@@ -45,3 +45,28 @@ def test_send_is_skipped_without_a_key(capsys):
     emails.Config.RESEND_API_KEY = ""
     assert emails._send("a@b.com", "subj", "<p>x</p>") is False
     assert "skipping email" in capsys.readouterr().out
+
+
+def test_warns_when_left_on_the_sandbox_sender(capsys, monkeypatch):
+    """The sandbox sender is accepted by the API but refused for every real
+    recipient, so a deploy left on it looks configured and delivers nothing.
+    That is exactly what broke password resets in production."""
+    monkeypatch.setattr(emails.Config, "RESEND_API_KEY", "re_test")
+    monkeypatch.setattr(emails.Config, "RESEND_FROM", "App <onboarding@resend.dev>")
+    monkeypatch.setattr(emails.httpx, "post", lambda *a, **k: (_ for _ in ()).throw(
+        RuntimeError("network blocked in tests")))
+
+    emails._send("someone@example.com", "subj", "<p>x</p>")
+    out = capsys.readouterr().out
+    assert "sandbox sender" in out
+    assert "verified domain" in out
+
+
+def test_no_warning_on_a_verified_sender(capsys, monkeypatch):
+    monkeypatch.setattr(emails.Config, "RESEND_API_KEY", "re_test")
+    monkeypatch.setattr(emails.Config, "RESEND_FROM", "App <noreply@example.com>")
+    monkeypatch.setattr(emails.httpx, "post", lambda *a, **k: (_ for _ in ()).throw(
+        RuntimeError("network blocked in tests")))
+
+    emails._send("someone@example.com", "subj", "<p>x</p>")
+    assert "sandbox sender" not in capsys.readouterr().out
