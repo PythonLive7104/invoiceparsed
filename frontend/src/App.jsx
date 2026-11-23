@@ -29,6 +29,11 @@ const DashboardShell = lazy(() => import("@/components/dashboard/DashboardShell.
 const DashboardHome = lazy(() => import("@/pages/DashboardHome.jsx"));
 const History = lazy(() => import("@/pages/History.jsx"));
 const ExtractionDetail = lazy(() => import("@/pages/ExtractionDetail.jsx"));
+const Suppliers = lazy(() => import("@/pages/Suppliers.jsx"));
+const PurchaseOrders = lazy(() => import("@/pages/PurchaseOrders.jsx"));
+const PurchaseOrderDetail = lazy(() => import("@/pages/PurchaseOrderDetail.jsx"));
+const InvoiceMatching = lazy(() => import("@/pages/InvoiceMatching.jsx"));
+const SupplierDetail = lazy(() => import("@/pages/SupplierDetail.jsx"));
 const Billing = lazy(() => import("@/pages/Billing.jsx"));
 const CheckoutReturn = lazy(() => import("@/pages/CheckoutReturn.jsx"));
 const ApiSettings = lazy(() => import("@/pages/ApiSettings.jsx"));
@@ -120,6 +125,11 @@ export default function App() {
             <Route index element={<DashboardHome />} />
             <Route path="history" element={<History />} />
             <Route path="extractions/:id" element={<ExtractionDetail />} />
+            <Route path="suppliers" element={<Suppliers />} />
+            <Route path="suppliers/:id" element={<SupplierDetail />} />
+            <Route path="purchase-orders" element={<PurchaseOrders />} />
+            <Route path="purchase-orders/:id" element={<PurchaseOrderDetail />} />
+            <Route path="matching" element={<InvoiceMatching />} />
             <Route path="api" element={<ApiSettings />} />
             <Route path="billing" element={<Billing />} />
             <Route path="billing/return" element={<CheckoutReturn />} />

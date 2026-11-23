@@ -23,11 +23,20 @@ from documents import (
     save_files,
 )
 from extensions import db, limiter
-from models import DuplicateMatch, Extraction, FieldCorrection, User
+from models import (
+    DuplicateMatch,
+    Extraction,
+    FieldCorrection,
+    InvoiceMatch,
+    PurchaseOrder,
+    User,
+)
 from money import as_json, to_decimal
 from openai_service import extract_document
 from plans import plan_allows
+from po_matching import auto_match, evaluate
 from roles import DOCUMENTS_EXPORT, DOCUMENTS_WRITE
+from suppliers import attach_to_invoice
 from tenancy import current_organization, require_permission, scoped
 from usage import usage_for
 from validation import validate_invoice
@@ -194,7 +203,47 @@ def _serialize(row: Extraction, data) -> dict:
         payload["validation"] = validate_invoice(data)
     payload["duplicates"] = _duplicates_for(row.id)
     payload["corrections"] = _corrections_for(row.id)
+    if row.doc_type == "invoice" and isinstance(data, dict):
+        # Recomputed from the live document, like validation above, so an
+        # edited figure changes the verdict immediately. `evaluate` refreshes
+        # the cached columns the exception list filters on; the caller commits.
+        payload["poMatch"] = _po_match_for(row, data)
     return payload
+
+
+def _po_match_for(row, data) -> dict | None:
+    """Where this invoice stands against its purchase order, or None.
+
+    None rather than an empty comparison when the organization has no purchase
+    orders at all: a product being used only for extraction should not start
+    reporting "no PO reference" exceptions on every document.
+    """
+    has_orders = (
+        db.session.query(PurchaseOrder.id)
+        .filter(PurchaseOrder.organization_id == row.organization_id)
+        .first()
+    )
+    match = InvoiceMatch.query.filter_by(extraction_id=row.id).first()
+    if has_orders is None and match is None:
+        return None
+    comparison = evaluate(row, data, match=match)
+    # `evaluate` refreshed the cached verdict on the match row, and this is the
+    # last thing that happens before the response is built, so it is committed
+    # here rather than left for a caller to remember. Without it, correcting a
+    # figure on an invoice would change what the detail page shows and leave
+    # the exception list filtering on the old answer.
+    db.session.commit()
+    return {
+        "matchId": match.id if match else None,
+        "purchaseOrderId": match.purchase_order_id if match else None,
+        "status": match.status if match else None,
+        "method": match.method if match else None,
+        "outcome": comparison.get("outcome"),
+        "blocked": comparison.get("blocked", False),
+        "overridden": bool(match and match.is_overridden),
+        "counts": comparison.get("counts"),
+        "findings": comparison.get("findings"),
+    }
 
 
 # ─── Extraction ──────────────────────────────────────────────────────────────
@@ -348,6 +397,16 @@ def extract():
     record.status = "completed"
     record.error_message = None
     apply_headline_fields(record, document)
+    # Attach to a supplier (creating one if this is a new vendor) so the
+    # document counts toward that supplier's history straight away.
+    try:
+        attach_to_invoice(record, organization.id, document)
+    except Exception:
+        # Never lose a processed document over supplier bookkeeping.
+        db.session.rollback()
+        current_app.logger.exception(
+            "Supplier attach failed for extraction %s", record.id
+        )
     _record_processing_stats(
         record, document, elapsed_ms=(time.monotonic() - started) * 1000
     )
@@ -363,6 +422,20 @@ def extract():
         db.session.rollback()
         current_app.logger.exception(
             "Duplicate detection failed for extraction %s", record.id
+        )
+
+    # Match against an open purchase order. After the supplier is attached, so
+    # a supplier-and-amount suggestion has something to work with. Never blocks
+    # the upload for the same reason duplicate detection does not: the customer
+    # has already paid to process this document, and a matching failure must
+    # not be what loses it.
+    try:
+        auto_match(record, document)
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        current_app.logger.exception(
+            "PO matching failed for extraction %s", record.id
         )
 
     payload = _serialize(record, document)

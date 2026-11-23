@@ -18,7 +18,7 @@ from auth import login_required
 from extensions import db
 from models import Extraction
 from plans import PLANS
-from roles import ORG_SETTINGS
+from roles import ORG_SETTINGS, permissions_for
 from tenancy import current_organization, current_role, require_permission, scoped
 from usage import usage_for
 
@@ -112,6 +112,12 @@ def get_current():
     return jsonify({
         "organization": organization.public(),
         "role": current_role(),
+        # The caller's permissions, sent as data rather than left for the
+        # client to derive from the role. A copy of the role table in the
+        # frontend would drift from this one, and the drift would show up as a
+        # button that 403s - or worse, a control the server quietly allows that
+        # the UI has decided to hide.
+        "permissions": sorted(permissions_for(current_role() or "")),
         "onboarding": onboarding_state(g.user, organization),
     })
 

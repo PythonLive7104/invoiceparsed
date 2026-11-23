@@ -516,19 +516,203 @@ about duplicates, and can track processing history.
 
 All of Phase 2 depends on **F3**.
 
-- **[ ] P2.1 Supplier management** — full supplier records (including bank
-  details behind access control), automatic association from extracted
-  invoices, history, invoiced totals, outstanding balances, and duplicate
-  supplier detection.
-- **[ ] P2.2 Purchase orders** — create, assign supplier, line items, taxes,
-  delivery dates, terms, attachments, approval submission. Statuses: draft,
-  pending approval, approved, sent to supplier, partially received, fully
-  received, closed, cancelled. Downloadable PDF.
-- **[ ] P2.3 Invoice-to-PO matching** — match on supplier and PO reference, then
-  compare line items, quantities, unit prices, taxes and totals. Report exact
-  matches, price and quantity discrepancies, missing references, supplier
-  mismatches and over-PO invoicing. Configurable tolerances. Never auto-approve
-  an invoice that fails an important check.
+- **[x] P2.1 Supplier management** — done. Records create themselves: an
+  uploaded invoice is attached to its supplier, creating one if the vendor is
+  new. Matching is by tax ID first (government-issued and exact, so it outranks
+  a name the scanner may have mangled), then by normalized name sharing
+  `duplicates.normalize_supplier`, so "Acme Supplies Ltd." and "acme supplies
+  limited" are one business. Where there is doubt the invoice is left
+  unattached rather than guessed — attaching to the WRONG supplier is worse
+  than leaving it, because the totals simply come out wrong and nothing looks
+  broken.
+
+  **Bank details are gated separately.** `suppliers:read` returns the record;
+  `suppliers:bank:read` returns payment details, and unauthorized callers do
+  not get the key at all rather than getting it empty — a nulled field still
+  confirms the details exist. Changing them needs the bank permission even
+  though the rest of the record only needs `suppliers:write`, and an extraction
+  **never silently rewrites known bank details**: that is precisely the
+  invoice-redirection fraud path.
+
+  Totals are summed per currency, because one figure across mixed currencies is
+  a meaningless number that looks authoritative. Suppliers are archived, never
+  deleted — removing one would orphan financial history. Duplicate detection
+  covers shared tax IDs and one name containing another.
+
+  30 tests, weighted as much toward *not* matching as toward matching.
+- **[x] P2.2 Purchase orders** — done. Create an order against a supplier, add
+  line items with quantities, units, unit prices and per-line tax, set delivery
+  dates and terms, attach files, submit for approval, and download it as a PDF
+  to send. All eight statuses: draft, pending approval, approved, sent,
+  partially received, fully received, closed, cancelled.
+
+  Three rules carry the integrity of the whole module, and each is tested:
+
+  1. **Totals are computed, never accepted.** `subtotal`, `tax_total` and
+     `total` are derived from the line rows on every write, and a
+     client-supplied total is discarded. A stored total that disagrees with its
+     own lines is where both bugs and fraud hide, and it would silently poison
+     P2.3 matching.
+  2. **An approved order is immutable.** Commercial terms are editable in
+     `draft` only — approval approves *specific amounts*, so editing afterwards
+     would make the approval a signature on a document that no longer exists.
+     To change an approved order you cancel it and raise another, which is how
+     procurement works on paper. Orders under approval are locked too, or the
+     approver reviews one set of numbers and authorizes another.
+  3. **Nothing is deleted.** Cancelling is the strongest action available: an
+     order that was approved is a record of money the organization committed to
+     spend, and an invoice may still arrive against it.
+
+  **Each line is rounded before the lines are summed.** Suppliers print
+  per-line amounts to 2dp and total those, so rounding only at the end can
+  differ by a cent — which would raise a false mismatch in P2.3 against a
+  perfectly good invoice. Three lines of 0.335 total 1.02 here, not 1.01.
+
+  **Approval is a separate capability from raising an order**
+  (`approvals:act`, not `purchase_orders:write`), and `POST /status` explicitly
+  refuses the approval transitions so the write permission cannot be used to
+  self-authorize. On top of that, **you cannot approve an order you raised**
+  where another approver exists — raising and authorizing the same commitment
+  is the classic internal-control failure. The rule counts members holding
+  `approvals:act`, not members, and relaxes for an organization where the actor
+  is the only approver: refusing there would make approval impossible rather
+  than safer.
+
+  Lines are their own table, not JSON on the order, because P2.3 compares
+  invoice lines against them and P2.4 tracks received quantities per line;
+  stored as JSON, "how much of line 3 is outstanding?" stops being a question
+  SQL can answer. `quantity_received` and `quantity_invoiced` ship unused so
+  the goods-receipt and matching work needs no migration over live orders.
+
+  Numbering is `PO-0001` per organization, derived from the highest existing
+  number rather than a counter column so it survives imports and cancellations;
+  an organization's own scheme is honoured instead if supplied. Two
+  simultaneous creates can collide, and the unique constraint catches it and
+  retries — cheaper and safer than locking a counter on every write.
+
+  Attachments stay addable after approval, unlike edits: they are evidence
+  *about* the order rather than terms *of* it. The client's filename never
+  reaches the filesystem path.
+
+  The per-line amount column is the **net** amount, so it adds up to the
+  Subtotal printed beneath it and Subtotal + Tax = Total. Showing tax-inclusive
+  line amounts above a "Subtotal" label — which the first draft did — produces
+  a document whose own columns disagree, and that is the first thing anyone
+  checking it notices. There is a test asserting the table foots.
+
+  The PDF (reportlab, isolated in `po_pdf.py`) labels anything unapproved
+  **"NOT YET APPROVED"** and footers it as "not an authorization to supply" —
+  printing a draft that reads as approved is how an unapproved commitment
+  becomes a real one. A server that has not been rebuilt since this landed
+  answers 503 with a clear message rather than a 500 traceback.
+
+  The frontend asks the server what the member may do rather than deriving it
+  from the role: `/api/auth/me` returns the permission list, and `can()` in
+  `auth.jsx` gates the controls. A copy of the role table in the client would
+  drift from `roles.py`, and the drift would show up either as a button that
+  403s or — worse — as a control the server allows that the UI has silently
+  hidden. The lifecycle buttons likewise come from the server's `nextStatuses`
+  rather than a second copy of the state machine. The draft line editor shows a
+  running total explicitly labelled an **estimate**; the server's figures
+  replace it on save, because an unlabelled total computed in the browser is a
+  second opinion about money.
+
+  108 tests, plus 4 on the permission payload the client gates on.
+- **[x] P2.3 Invoice-to-PO matching** — `po_matching.py`,
+  `routes/match_routes.py`, `models.MatchingSettings` / `models.InvoiceMatch`,
+  migration `c84259e07149`. Frontend: `pages/InvoiceMatching.jsx`,
+  `components/dashboard/PoMatchPanel.jsx`, `components/dashboard/MatchStatus.jsx`,
+  plus an "Invoices against this order" section on the order page.
+
+  The oldest control in accounts payable: do not pay for something nobody
+  ordered, and do not pay more than was agreed. Four rules shape the module.
+
+  1. **Findings are computed, never stored.** Every comparison is recomputed
+     from the live document and the live order on each read, the way
+     `validation.py` recomputes arithmetic. `InvoiceMatch.outcome` and the two
+     counts beside it are a cache so an exception list can filter in SQL, and
+     they are refreshed on every recompute — correcting a misread price clears
+     the exception immediately instead of leaving it open forever, and nothing
+     in the system is allowed to *act* on the cached columns.
+  2. **A weak signal suggests; it never decides.** Only an exact PO number with
+     a clean comparison links itself. Everything else waits for a person,
+     because attaching an invoice to the wrong order corrupts the committed
+     figure for *both* orders and nothing looks broken.
+  3. **Blocking is not refusing.** A blocking finding means "must not be
+     approved without a human override", and the override records who accepted
+     it and why — in a mandatory note. Nothing is ever deleted, rejected or
+     paid here. A supplier really can invoice a price change somebody agreed
+     over the phone.
+  4. **A finding names the numbers.** "invoiced at 125.00 a unit, ordered at
+     100.00 (25.00 higher)" is actionable; "price mismatch" sends someone
+     hunting through two documents.
+
+  **Findings**, by what each means for a payment. Blocking: `po_not_found`,
+  `po_cancelled`, `po_not_approved`, `supplier_mismatch`, `currency_mismatch`,
+  `total_over_po`, `line_price_higher`, `line_over_quantity`,
+  `line_not_on_po`. Review: `po_closed`, `no_po_reference`,
+  `no_invoice_lines`, `line_tax_mismatch`, `total_above_order_prices`,
+  `too_many_invoices`. Information: `line_price_lower`, `partial_invoice`,
+  `lines_not_invoiced`.
+
+  **Over-invoicing is caught across invoices, not just within one.** Each
+  invoice is measured against what *remains* on the order — the order total
+  less everything already confirmed against it — so two invoices that are each
+  well inside the order but together bill more than was ordered are caught on
+  the second. That is the version a single-document check misses entirely. Only
+  **confirmed** matches consume an order's value: one bad auto-suggestion must
+  not make every later invoice look like over-invoicing. And an invoice is
+  excluded from its own "already invoiced" figure, without which re-reading a
+  confirmed invoice would find the order's value consumed *by itself*.
+
+  **Tolerances are configurable per organization and gated on
+  `organization:settings`**, not on the permission the people who process
+  invoices hold all day — widening a tolerance is precisely how you switch the
+  control off. Each tolerance has both a percentage and an absolute bound, and
+  a difference passes if it is inside **either**: 1% of a 50.00 line is 0.50,
+  which flags ordinary rounding, while 1% of 5,000,000.00 is 50,000.00, which
+  waves a real error through. Defaults allow two cents of rounding on price and
+  total, and nothing at all on quantity — shipping more than was ordered is a
+  commercial event somebody should see.
+
+  **Line pairing is pure and deterministic**, ordered by how much evidence each
+  signal carries: exact SKU, then exact description, then a SKU written inside
+  the other side's description (which suppliers do constantly), then
+  containment, then token coverage. Coverage is measured against the *shorter*
+  description rather than as plain overlap, because suppliers abbreviate — the
+  order says "Marine grease, lithium complex, 18kg pail" and the invoice says
+  "Marine grease 18kg", and measured as overlap the words the invoice left out
+  count against it. A floor on the overlap as well, so "red widget" does not
+  pair with "red widget deluxe pro max edition". Being deterministic is what
+  lets `quantity_invoiced` be a **cache with one writer**
+  (`recompute_invoiced`) rather than a running total — an increment would drift
+  the first time a match was rejected, an invoice deleted or a quantity
+  corrected, and a silently wrong "invoiced to date" is worse than no column.
+
+  Being invoiced is not being delivered, so nothing here moves an order's
+  status; `partially_received` and `fully_received` stay P2.4's to set from
+  goods receipts.
+
+  **`is_blocked()` is the single question P2.5's approval engine will ask**, and
+  the same field drives the screen, so the UI and approval cannot disagree
+  about whether an invoice may be paid. An invoice citing an order that does
+  not exist is blocking and is **never** rescued by the supplier-and-amount
+  fallback: that fallback only runs where the invoice names no order at all,
+  since offering a different order of the same value papers over a finding that
+  needs a person. An organization with no purchase orders is told nothing about
+  matching, so a customer using the product only for extraction does not start
+  seeing "no PO reference" on every upload.
+
+  The scan over an order's confirmed invoices is capped, and past the cap the
+  comparison reports the figure as **incomplete** rather than returning a
+  smaller one — understating what has been invoiced is the one direction this
+  must never fail in, because it is what over-invoicing is measured against.
+
+  Matching runs on upload after the supplier is attached, and like duplicate
+  detection it never blocks the upload: the customer has already paid to
+  process the document, and a matching failure must not be what loses it.
+
+  115 tests.
 - **[ ] P2.4 Goods received + three-way matching** — GRN records with ordered /
   received / damaged / outstanding quantities and partial deliveries, then
   PO + GRN + Invoice matching. Detect invoice-before-goods, over-invoicing

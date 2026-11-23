@@ -24,7 +24,10 @@ from routes import (
     demo_bp,
     extract_bp,
     keys_bp,
+    match_bp,
     organization_bp,
+    purchase_order_bp,
+    supplier_bp,
     support_bp,
     webhook_bp,
 )
@@ -88,6 +91,9 @@ def create_app(config_class=Config) -> Flask:
     app.register_blueprint(keys_bp)
     app.register_blueprint(organization_bp)
     app.register_blueprint(webhook_bp)
+    app.register_blueprint(supplier_bp)
+    app.register_blueprint(purchase_order_bp)
+    app.register_blueprint(match_bp)
     app.register_blueprint(support_bp)
 
     # Flask-Admin at /admin (no-op unless ADMIN_USER/ADMIN_PASSWORD are set).

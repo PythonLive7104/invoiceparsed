@@ -1,6 +1,7 @@
-"""SQLAlchemy models: User and Extraction."""
+"""SQLAlchemy models."""
 import uuid
 from datetime import datetime
+from decimal import Decimal
 
 from extensions import db
 from money import as_json
@@ -8,6 +9,15 @@ from money import as_json
 
 def _uuid() -> str:
     return uuid.uuid4().hex
+
+
+def _iso(value) -> str | None:
+    """A datetime as an ISO-8601 UTC string, or None.
+
+    In one place so every model renders timestamps identically; the clients
+    parse these, and two formats in one payload is a bug waiting to happen.
+    """
+    return value.isoformat() + "Z" if value else None
 
 
 class Organization(db.Model):
@@ -176,6 +186,11 @@ class Extraction(db.Model):
     file_name = db.Column(db.String(255), nullable=False)
     file_type = db.Column(db.String(100), nullable=False)
     file_size = db.Column(db.Integer, nullable=False)
+    # The supplier this document is attributed to, matched on upload or set by
+    # hand. Nullable: an unreadable supplier name must not block the upload.
+    supplier_id = db.Column(
+        db.String, db.ForeignKey("suppliers.id"), nullable=True, index=True
+    )
     # SHA-256 over the uploaded bytes. The cheapest and most certain duplicate
     # signal there is: identical bytes are the same document, whatever the
     # extractor made of them. Nullable because rows created before this existed
@@ -377,6 +392,618 @@ class FieldCorrection(db.Model):
             "by": user_label,
             "at": self.created_at.isoformat() + "Z" if self.created_at else None,
         }
+
+
+class Supplier(db.Model):
+    """A business the organization buys from.
+
+    Created manually or adopted automatically from an extracted invoice. Once a
+    supplier exists, every invoice bearing its name is attached to it, which is
+    what makes "how much do we owe Acme" and later PO matching possible at all.
+
+    Bank details live here and are the highest-value target in the dataset:
+    invoice-redirection fraud works by changing them. They are returned only to
+    roles holding suppliers:bank:read, and changes to them are worth alerting
+    on (P4.4).
+    """
+    __tablename__ = "suppliers"
+    __table_args__ = (
+        # Two suppliers in one organization may not share a normalized name.
+        # The normalized form is what matching uses, so allowing duplicates
+        # would make "which supplier is this invoice from" ambiguous.
+        db.UniqueConstraint("organization_id", "match_key", name="uq_supplier_org_key"),
+    )
+
+    id = db.Column(db.String, primary_key=True, default=_uuid)
+    organization_id = db.Column(
+        db.String, db.ForeignKey("organizations.id"), nullable=False, index=True
+    )
+
+    name = db.Column(db.String(200), nullable=False)
+    # Normalized name (lower case, punctuation and company suffixes removed).
+    # Stored rather than computed per query so matching is an indexed lookup.
+    match_key = db.Column(db.String(200), nullable=False, index=True)
+
+    contact_name = db.Column(db.String(120), nullable=True)
+    email = db.Column(db.String(254), nullable=True)
+    phone = db.Column(db.String(60), nullable=True)
+    address = db.Column(db.String(500), nullable=True)
+    country = db.Column(db.String(2), nullable=True)        # ISO 3166-1 alpha-2
+    tax_id = db.Column(db.String(60), nullable=True, index=True)
+    registration_number = db.Column(db.String(60), nullable=True)
+
+    # Commercial defaults, used later by PO matching and payment due dates.
+    payment_terms = db.Column(db.String(120), nullable=True)
+    currency = db.Column(db.String(3), nullable=True)       # ISO 4217
+    notes = db.Column(db.Text, nullable=True)
+
+    # active | archived. Archived rather than deleted: a supplier with invoices
+    # against it cannot be removed without orphaning financial history.
+    status = db.Column(db.String(20), nullable=False, default="active", index=True)
+
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    def public(self, *, include_bank=False, stats=None) -> dict:
+        data = {
+            "id": self.id,
+            "name": self.name,
+            "contactName": self.contact_name,
+            "email": self.email,
+            "phone": self.phone,
+            "address": self.address,
+            "country": self.country,
+            "taxId": self.tax_id,
+            "registrationNumber": self.registration_number,
+            "paymentTerms": self.payment_terms,
+            "currency": self.currency,
+            "notes": self.notes,
+            "status": self.status,
+            "createdAt": self.created_at.isoformat() + "Z" if self.created_at else None,
+        }
+        if include_bank:
+            # Omitted entirely rather than nulled for unauthorized callers: a
+            # key that is present-but-empty still tells them it exists.
+            data["bankDetails"] = {
+                "bankName": self.bank_name,
+                "accountName": self.bank_account_name,
+                "accountNumber": self.bank_account_number,
+                "iban": self.bank_iban,
+                "swift": self.bank_swift,
+                "sortCode": self.bank_sort_code,
+            }
+        if stats is not None:
+            data["stats"] = stats
+        return data
+
+    # Bank details, separated above by permission.
+    bank_name = db.Column(db.String(120), nullable=True)
+    bank_account_name = db.Column(db.String(200), nullable=True)
+    bank_account_number = db.Column(db.String(60), nullable=True)
+    bank_iban = db.Column(db.String(60), nullable=True)
+    bank_swift = db.Column(db.String(20), nullable=True)
+    bank_sort_code = db.Column(db.String(20), nullable=True)
+
+
+class PurchaseOrder(db.Model):
+    """A commitment to buy: what was ordered, from whom, at what price.
+
+    The PO is the control document of accounts payable. An invoice on its own
+    proves only that someone sent a demand for money; a PO proves the
+    organization agreed to owe it, and at what price. Everything in P2.3 and
+    P2.4 (invoice matching, three-way matching) compares an incoming invoice
+    against these rows, which drives two design rules:
+
+    1. **Totals are computed, never accepted.** `subtotal`, `tax_total` and
+       `total` are derived from the line rows on every write. A client-supplied
+       total that disagrees with its own lines is exactly where both bugs and
+       fraud hide, and it would silently poison matching.
+    2. **An approved PO is immutable.** Approval is approval of specific
+       amounts, so commercial terms can only be edited while the PO is a
+       draft. To change an approved order you cancel it and raise another,
+       which is also how procurement works on paper.
+    """
+    __tablename__ = "purchase_orders"
+    __table_args__ = (
+        # One PO number per organization. The number is what suppliers quote
+        # back and what invoices reference, so a duplicate would make
+        # "which order is this invoice against?" unanswerable.
+        db.UniqueConstraint("organization_id", "po_number", name="uq_po_org_number"),
+    )
+
+    # Status lifecycle. Declared as data so the allowed transitions live in one
+    # readable place rather than scattered across route handlers.
+    DRAFT = "draft"
+    PENDING_APPROVAL = "pending_approval"
+    APPROVED = "approved"
+    SENT = "sent"
+    PARTIALLY_RECEIVED = "partially_received"
+    FULLY_RECEIVED = "fully_received"
+    CLOSED = "closed"
+    CANCELLED = "cancelled"
+
+    STATUSES = (
+        DRAFT, PENDING_APPROVAL, APPROVED, SENT,
+        PARTIALLY_RECEIVED, FULLY_RECEIVED, CLOSED, CANCELLED,
+    )
+
+    # What may follow what. Anything not listed is rejected, so an unexpected
+    # client cannot park a PO in a state the rest of the system cannot read.
+    TRANSITIONS: dict[str, set[str]] = {
+        DRAFT: {PENDING_APPROVAL, CANCELLED},
+        # A rejected PO returns to draft to be corrected and resubmitted.
+        PENDING_APPROVAL: {APPROVED, DRAFT, CANCELLED},
+        APPROVED: {SENT, CANCELLED},
+        SENT: {PARTIALLY_RECEIVED, FULLY_RECEIVED, CANCELLED},
+        PARTIALLY_RECEIVED: {FULLY_RECEIVED, CLOSED, CANCELLED},
+        FULLY_RECEIVED: {CLOSED},
+        # Terminal. A closed order is history; a cancelled one never happened.
+        CLOSED: set(),
+        CANCELLED: set(),
+    }
+
+    # States in which commercial terms may still be edited. Deliberately just
+    # the one: see rule 2 above.
+    EDITABLE_STATUSES = {DRAFT}
+
+    # States where the order still represents money the organization expects to
+    # spend. Used for the open-commitment figure.
+    OPEN_STATUSES = {APPROVED, SENT, PARTIALLY_RECEIVED}
+
+    id = db.Column(db.String, primary_key=True, default=_uuid)
+    organization_id = db.Column(
+        db.String, db.ForeignKey("organizations.id"), nullable=False, index=True
+    )
+    # Required: you cannot order from nobody, and a PO with no supplier can
+    # never be matched, sent or received.
+    supplier_id = db.Column(
+        db.String, db.ForeignKey("suppliers.id"), nullable=False, index=True
+    )
+    created_by_user_id = db.Column(
+        db.String, db.ForeignKey("users.id"), nullable=False, index=True
+    )
+
+    po_number = db.Column(db.String(60), nullable=False, index=True)
+    status = db.Column(db.String(30), nullable=False, default=DRAFT, index=True)
+
+    currency = db.Column(db.String(3), nullable=False, default="USD")
+
+    # Derived from the lines on every write. Stored so the list view can sort
+    # and filter on value in SQL instead of loading every line.
+    subtotal = db.Column(db.Numeric(18, 4), nullable=False, default=0)
+    tax_total = db.Column(db.Numeric(18, 4), nullable=False, default=0)
+    total = db.Column(db.Numeric(18, 4), nullable=False, default=0)
+
+    # Dates are stored as text in the same ISO form the extractor produces for
+    # invoices, so PO and invoice dates compare without a parsing layer that
+    # could disagree between the two.
+    order_date = db.Column(db.String(40), nullable=True)
+    expected_delivery_date = db.Column(db.String(40), nullable=True, index=True)
+
+    payment_terms = db.Column(db.String(120), nullable=True)
+    delivery_address = db.Column(db.String(500), nullable=True)
+    notes = db.Column(db.Text, nullable=True)
+    # The organization's own reference, e.g. a requisition number.
+    reference = db.Column(db.String(120), nullable=True, index=True)
+
+    # Cost attribution. Carried now because P2.5 routes approvals by
+    # department, cost centre and project; declaring them here avoids a
+    # migration that would have to back-fill live orders later.
+    department = db.Column(db.String(120), nullable=True, index=True)
+    cost_center = db.Column(db.String(120), nullable=True)
+    project = db.Column(db.String(120), nullable=True)
+    category = db.Column(db.String(120), nullable=True)
+
+    submitted_at = db.Column(db.DateTime, nullable=True)
+    approved_at = db.Column(db.DateTime, nullable=True)
+    approved_by_user_id = db.Column(
+        db.String, db.ForeignKey("users.id"), nullable=True
+    )
+    # Kept after a rejected PO returns to draft, so the person correcting it
+    # can see why it came back.
+    rejection_reason = db.Column(db.String(500), nullable=True)
+    rejected_at = db.Column(db.DateTime, nullable=True)
+    sent_at = db.Column(db.DateTime, nullable=True)
+    closed_at = db.Column(db.DateTime, nullable=True)
+    cancelled_at = db.Column(db.DateTime, nullable=True)
+
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    lines = db.relationship(
+        "PurchaseOrderLine",
+        back_populates="purchase_order",
+        order_by="PurchaseOrderLine.line_no",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+    )
+    attachments = db.relationship(
+        "PurchaseOrderAttachment",
+        back_populates="purchase_order",
+        order_by="PurchaseOrderAttachment.created_at",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+    )
+
+    def can_transition_to(self, status: str) -> bool:
+        return status in self.TRANSITIONS.get(self.status, set())
+
+    @property
+    def is_editable(self) -> bool:
+        return self.status in self.EDITABLE_STATUSES
+
+    def list_item(self, supplier_name=None, line_count=None) -> dict:
+        """Row shape for the purchase-order list."""
+        return {
+            "id": self.id,
+            "poNumber": self.po_number,
+            "status": self.status,
+            "supplierId": self.supplier_id,
+            "supplierName": supplier_name,
+            "currency": self.currency,
+            "total": as_json(self.total),
+            "orderDate": self.order_date,
+            "expectedDeliveryDate": self.expected_delivery_date,
+            "reference": self.reference,
+            "department": self.department,
+            "lineCount": line_count if line_count is not None else len(self.lines),
+            "createdAt": self.created_at.isoformat() + "Z" if self.created_at else None,
+        }
+
+    def public(self, *, supplier=None, created_by=None, approved_by=None) -> dict:
+        return {
+            **self.list_item(
+                supplier_name=supplier.get("name") if supplier else None
+            ),
+            "subtotal": as_json(self.subtotal),
+            "taxTotal": as_json(self.tax_total),
+            "paymentTerms": self.payment_terms,
+            "deliveryAddress": self.delivery_address,
+            "notes": self.notes,
+            "costCenter": self.cost_center,
+            "project": self.project,
+            "category": self.category,
+            "supplier": supplier,
+            "lines": [line.public() for line in self.lines],
+            "attachments": [a.public() for a in self.attachments],
+            "isEditable": self.is_editable,
+            "nextStatuses": sorted(self.TRANSITIONS.get(self.status, set())),
+            "createdBy": created_by,
+            "approvedBy": approved_by,
+            "submittedAt": _iso(self.submitted_at),
+            "approvedAt": _iso(self.approved_at),
+            "rejectedAt": _iso(self.rejected_at),
+            "rejectionReason": self.rejection_reason,
+            "sentAt": _iso(self.sent_at),
+            "closedAt": _iso(self.closed_at),
+            "cancelledAt": _iso(self.cancelled_at),
+            "updatedAt": _iso(self.updated_at),
+        }
+
+
+class PurchaseOrderLine(db.Model):
+    """One ordered item.
+
+    Separate rows rather than a JSON blob on the order, because P2.3 compares
+    invoice lines against these and P2.4 tracks how much of each line has
+    actually arrived. Stored as JSON, "how much of line 3 is outstanding?"
+    stops being a question SQL can answer.
+    """
+    __tablename__ = "purchase_order_lines"
+
+    id = db.Column(db.String, primary_key=True, default=_uuid)
+    purchase_order_id = db.Column(
+        db.String, db.ForeignKey("purchase_orders.id"), nullable=False, index=True
+    )
+    # Denormalized from the parent so tenancy.scoped() works on lines directly
+    # and a cross-organization read cannot happen through a line id.
+    organization_id = db.Column(
+        db.String, db.ForeignKey("organizations.id"), nullable=False, index=True
+    )
+
+    # Position on the order, 1-based. The supplier's invoice refers to "line 2".
+    line_no = db.Column(db.Integer, nullable=False, default=1)
+
+    description = db.Column(db.String(500), nullable=False)
+    sku = db.Column(db.String(120), nullable=True, index=True)
+    unit = db.Column(db.String(40), nullable=True)          # each, kg, hour...
+
+    # Numeric, not Float, for the same reason money is: 0.1 of a tonne has no
+    # exact binary representation. Quantities can be fractional.
+    quantity = db.Column(db.Numeric(18, 4), nullable=False, default=0)
+    unit_price = db.Column(db.Numeric(18, 4), nullable=False, default=0)
+    # Percentage, e.g. 7.5000 for 7.5% VAT. Stored as the rate rather than only
+    # the resulting amount so a changed quantity recomputes tax correctly.
+    tax_rate = db.Column(db.Numeric(9, 4), nullable=False, default=0)
+
+    # Derived. Rounded per line BEFORE summing, because that is what suppliers
+    # print and therefore what P2.3 must compare against; rounding only at the
+    # end can disagree with the invoice by a cent and raise a false mismatch.
+    line_subtotal = db.Column(db.Numeric(18, 4), nullable=False, default=0)
+    tax_amount = db.Column(db.Numeric(18, 4), nullable=False, default=0)
+    line_total = db.Column(db.Numeric(18, 4), nullable=False, default=0)
+
+    # Filled by P2.4 (goods receipts) and P2.3 (invoice matching). Carried now
+    # so the received/invoiced position of a line has one home from the start,
+    # and never written by the purchase-order API itself.
+    quantity_received = db.Column(db.Numeric(18, 4), nullable=False, default=0)
+    quantity_invoiced = db.Column(db.Numeric(18, 4), nullable=False, default=0)
+
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    purchase_order = db.relationship("PurchaseOrder", back_populates="lines")
+
+    def public(self) -> dict:
+        return {
+            "id": self.id,
+            "lineNo": self.line_no,
+            "description": self.description,
+            "sku": self.sku,
+            "unit": self.unit,
+            "quantity": as_json(self.quantity),
+            "unitPrice": as_json(self.unit_price),
+            "taxRate": as_json(self.tax_rate),
+            "lineSubtotal": as_json(self.line_subtotal),
+            "taxAmount": as_json(self.tax_amount),
+            "lineTotal": as_json(self.line_total),
+            "quantityReceived": as_json(self.quantity_received),
+            "quantityInvoiced": as_json(self.quantity_invoiced),
+        }
+
+
+class PurchaseOrderAttachment(db.Model):
+    """A file attached to a purchase order: a quote, a spec, a signed copy.
+
+    Attachments stay addable after approval. They are evidence about the order,
+    not terms of it, so adding one cannot change what was agreed - which is why
+    they are exempt from the immutability rule covering lines and prices.
+    """
+    __tablename__ = "purchase_order_attachments"
+
+    id = db.Column(db.String, primary_key=True, default=_uuid)
+    purchase_order_id = db.Column(
+        db.String, db.ForeignKey("purchase_orders.id"), nullable=False, index=True
+    )
+    organization_id = db.Column(
+        db.String, db.ForeignKey("organizations.id"), nullable=False, index=True
+    )
+    uploaded_by_user_id = db.Column(
+        db.String, db.ForeignKey("users.id"), nullable=True
+    )
+
+    file_name = db.Column(db.String(255), nullable=False)
+    file_type = db.Column(db.String(100), nullable=False)
+    file_size = db.Column(db.Integer, nullable=False)
+    # Name on disk only, never a path from the client. Joined to UPLOAD_DIR on
+    # read so a stored value can never escape the upload directory.
+    stored_name = db.Column(db.String(255), nullable=False)
+
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    purchase_order = db.relationship("PurchaseOrder", back_populates="attachments")
+
+    def public(self) -> dict:
+        return {
+            "id": self.id,
+            "fileName": self.file_name,
+            "fileType": self.file_type,
+            "fileSize": self.file_size,
+            "createdAt": self.created_at.isoformat() + "Z" if self.created_at else None,
+        }
+
+
+class MatchingSettings(db.Model):
+    """Per-organization tolerances for invoice-to-PO matching.
+
+    One row per organization, created on first read with the defaults below.
+    These have to be configurable because the right answer is a commercial
+    decision, not a technical one: a builders' merchant delivering steel by
+    weight expects quantities to drift, a software reseller does not.
+
+    Every tolerance is expressed BOTH as a percentage and as an absolute
+    amount, and a difference passes if it is within EITHER. A percentage alone
+    is useless at both ends of the scale - 1% of a 50.00 line is 0.50, which
+    flags ordinary rounding as a discrepancy, while 1% of 5,000,000.00 is
+    50,000.00, which waves a real error through.
+    """
+    __tablename__ = "matching_settings"
+
+    id = db.Column(db.String, primary_key=True, default=_uuid)
+    organization_id = db.Column(
+        db.String, db.ForeignKey("organizations.id"),
+        nullable=False, unique=True, index=True,
+    )
+
+    # Unit price. The default allows two kobo/cents of rounding and nothing
+    # more, because a unit price is quoted, agreed and written down - unlike a
+    # quantity, it has no physical reason to vary.
+    price_tolerance_percent = db.Column(db.Numeric(9, 4), nullable=False, default=0)
+    price_tolerance_amount = db.Column(
+        db.Numeric(18, 4), nullable=False, default=Decimal("0.02")
+    )
+
+    # Quantity. Defaults to exact: shipping more than was ordered is a
+    # commercial event someone should see, not noise to absorb.
+    quantity_tolerance_percent = db.Column(db.Numeric(9, 4), nullable=False, default=0)
+    quantity_tolerance_amount = db.Column(db.Numeric(18, 4), nullable=False, default=0)
+
+    # Invoice total against the order's remaining value.
+    total_tolerance_percent = db.Column(db.Numeric(9, 4), nullable=False, default=0)
+    total_tolerance_amount = db.Column(
+        db.Numeric(18, 4), nullable=False, default=Decimal("0.02")
+    )
+
+    # An invoice that cites no purchase order at all. Off by default because
+    # plenty of legitimate spend - utilities, rent, a taxi - never has one.
+    # Organizations running strict three-way matching turn it on.
+    require_po_reference = db.Column(db.Boolean, nullable=False, default=False)
+
+    # Invoicing against an order nobody approved. On by default: this is the
+    # control that stops spend being committed after the fact.
+    block_unapproved_po = db.Column(db.Boolean, nullable=False, default=True)
+
+    # Link an invoice to its order automatically when the PO number on the
+    # document is an exact hit AND the comparison comes back clean. This
+    # confirms the LINK, never the invoice: approval is P2.5's decision and is
+    # gated separately. With this off, every link waits for a person.
+    auto_confirm_exact = db.Column(db.Boolean, nullable=False, default=True)
+
+    updated_at = db.Column(
+        db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
+    updated_by_user_id = db.Column(db.String, db.ForeignKey("users.id"), nullable=True)
+
+    def public(self) -> dict:
+        return {
+            "priceTolerancePercent": as_json(self.price_tolerance_percent),
+            "priceToleranceAmount": as_json(self.price_tolerance_amount),
+            "quantityTolerancePercent": as_json(self.quantity_tolerance_percent),
+            "quantityToleranceAmount": as_json(self.quantity_tolerance_amount),
+            "totalTolerancePercent": as_json(self.total_tolerance_percent),
+            "totalToleranceAmount": as_json(self.total_tolerance_amount),
+            "requirePoReference": bool(self.require_po_reference),
+            "blockUnapprovedPo": bool(self.block_unapproved_po),
+            "autoConfirmExact": bool(self.auto_confirm_exact),
+            "updatedAt": _iso(self.updated_at),
+        }
+
+
+class InvoiceMatch(db.Model):
+    """The link between one extracted invoice and the purchase order it bills.
+
+    At most one per invoice, enforced by a unique constraint: "which order does
+    this invoice belong to?" must have exactly one answer, or the amount
+    invoiced against an order is not a number anyone can compute.
+
+    Two fields look similar and mean different things:
+
+    * `status` is what a PERSON has decided about the link - suggested,
+      confirmed, or rejected. It persists.
+    * `outcome` is what the COMPARISON found - matched, discrepancy, or failed.
+      It is recomputed from the live document and order on every read (so it
+      stays correct after someone corrects an extracted figure) and this column
+      is only the last known verdict, kept for filtering and sorting in SQL.
+      The same arrangement as `Extraction.validation_status`.
+
+    An override is recorded here rather than making the findings disappear. A
+    discrepancy that a human accepted is still a discrepancy; what changed is
+    that someone took responsibility for it, and their name and reason are the
+    useful part of that record.
+    """
+    __tablename__ = "invoice_matches"
+    __table_args__ = (
+        db.UniqueConstraint("extraction_id", name="uq_invoice_match_extraction"),
+    )
+
+    # Who decided, and what they decided about the link.
+    SUGGESTED = "suggested"
+    CONFIRMED = "confirmed"
+    REJECTED = "rejected"
+    STATUSES = (SUGGESTED, CONFIRMED, REJECTED)
+
+    # What the comparison found, best first.
+    MATCHED = "matched"
+    DISCREPANCY = "discrepancy"
+    FAILED = "failed"
+    OUTCOMES = (MATCHED, DISCREPANCY, FAILED)
+
+    # How the order was found. Recorded because a wrong link is much easier to
+    # explain afterwards when you know which signal produced it.
+    BY_PO_NUMBER = "po_number"
+    BY_PO_REFERENCE = "po_reference"
+    BY_SUPPLIER_AMOUNT = "supplier_amount"
+    BY_MANUAL = "manual"
+
+    id = db.Column(db.String, primary_key=True, default=_uuid)
+    organization_id = db.Column(
+        db.String, db.ForeignKey("organizations.id"), nullable=False, index=True
+    )
+    extraction_id = db.Column(
+        db.String, db.ForeignKey("extractions.id"), nullable=False, index=True
+    )
+    purchase_order_id = db.Column(
+        db.String, db.ForeignKey("purchase_orders.id"), nullable=False, index=True
+    )
+
+    status = db.Column(db.String(20), nullable=False, default=SUGGESTED, index=True)
+    method = db.Column(db.String(30), nullable=False, default=BY_MANUAL)
+    # 0..1, how much evidence the link itself rests on - not how well the
+    # figures agreed, which is `outcome`.
+    score = db.Column(db.Float, nullable=False, default=0.0)
+
+    outcome = db.Column(db.String(20), nullable=True, index=True)
+    blocking_count = db.Column(db.Integer, nullable=False, default=0)
+    review_count = db.Column(db.Integer, nullable=False, default=0)
+
+    confirmed_by_user_id = db.Column(
+        db.String, db.ForeignKey("users.id"), nullable=True
+    )
+    confirmed_at = db.Column(db.DateTime, nullable=True)
+
+    # An accepted discrepancy. The note is mandatory at the API edge: "approved
+    # anyway" with no reason is not an audit trail.
+    override_note = db.Column(db.String(500), nullable=True)
+    overridden_by_user_id = db.Column(
+        db.String, db.ForeignKey("users.id"), nullable=True
+    )
+    overridden_at = db.Column(db.DateTime, nullable=True)
+
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+    created_by_user_id = db.Column(db.String, db.ForeignKey("users.id"), nullable=True)
+
+    @property
+    def is_overridden(self) -> bool:
+        return self.overridden_at is not None
+
+    def public(self, *, purchase_order=None, extraction=None, comparison=None,
+               confirmed_by=None, overridden_by=None) -> dict:
+        """The match, optionally with the live comparison and both documents.
+
+        `comparison` is passed in rather than computed here: a model should not
+        reach back into the matching engine, and the caller already has the
+        order and the parsed document the comparison needs.
+        """
+        data = {
+            "id": self.id,
+            "extractionId": self.extraction_id,
+            "purchaseOrderId": self.purchase_order_id,
+            "status": self.status,
+            "method": self.method,
+            "score": self.score,
+            "outcome": self.outcome,
+            "blockingCount": self.blocking_count or 0,
+            "reviewCount": self.review_count or 0,
+            "overridden": self.is_overridden,
+            "overrideNote": self.override_note,
+            "overriddenBy": overridden_by,
+            "overriddenAt": _iso(self.overridden_at),
+            "confirmedBy": confirmed_by,
+            "confirmedAt": _iso(self.confirmed_at),
+            "createdAt": _iso(self.created_at),
+        }
+        if purchase_order is not None:
+            data["purchaseOrder"] = {
+                "id": purchase_order.id,
+                "poNumber": purchase_order.po_number,
+                "status": purchase_order.status,
+                "currency": purchase_order.currency,
+                "total": as_json(purchase_order.total),
+                "supplierId": purchase_order.supplier_id,
+            }
+        if extraction is not None:
+            data["invoice"] = {
+                "id": extraction.id,
+                "fileName": extraction.file_name,
+                "vendorName": extraction.vendor_name,
+                "invoiceNumber": extraction.invoice_number,
+                "invoiceDate": extraction.invoice_date,
+                "currency": extraction.currency,
+                "total": as_json(extraction.total),
+                "supplierId": extraction.supplier_id,
+            }
+        if comparison is not None:
+            data["comparison"] = comparison
+        return data
 
 
 class DemoUsage(db.Model):

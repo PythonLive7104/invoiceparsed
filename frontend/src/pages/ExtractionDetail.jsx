@@ -104,6 +104,7 @@ export default function ExtractionDetail() {
                   validation={row.validation}
                   duplicates={row.duplicates}
                   corrections={row.corrections}
+                  poMatch={row.poMatch}
                   extractionId={row.id}
                   fileName={row.fileName}
                   splitView={split}

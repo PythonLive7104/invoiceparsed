@@ -30,6 +30,7 @@ import { LockedActions } from "@/components/dashboard/LockedActions";
 import { ValidationPanel } from "@/components/dashboard/ValidationPanel";
 import { DuplicateWarning } from "@/components/dashboard/DuplicateWarning";
 import { CorrectionTrail } from "@/components/dashboard/CorrectionTrail";
+import { PoMatchPanel } from "@/components/dashboard/PoMatchPanel";
 
 /** True when at least one of `keys` has a value on `obj`. */
 function hasAny(obj, keys) {
@@ -74,7 +75,7 @@ const setVendor = (setInvoice, key, v) =>
 const setCustomer = (setInvoice, key, v) =>
   setInvoice((inv) => ({ ...inv, customer: { ...inv.customer, [key]: v } }));
 
-export function InvoiceCard({ invoice: initial, extractionId, fileName, validation: initialValidation, duplicates: initialDuplicates, corrections: initialCorrections, initialShowDoc = false, splitView = false, onUpdated, locked = false, onLockedAction }) {
+export function InvoiceCard({ invoice: initial, extractionId, fileName, validation: initialValidation, duplicates: initialDuplicates, corrections: initialCorrections, poMatch: initialPoMatch = null, initialShowDoc = false, splitView = false, onUpdated, locked = false, onLockedAction }) {
   const [invoice, setInvoice] = useState(initial);
   const [saved, setSaved] = useState(initial); // last persisted version (for cancel)
   const [editing, setEditing] = useState(false);
@@ -99,6 +100,7 @@ export function InvoiceCard({ invoice: initial, extractionId, fileName, validati
       setValidation(data.validation ?? null);
       setDupes(data.duplicates ?? []);
       setCorrections(data.corrections ?? []);
+      setPoMatch(data.poMatch ?? null);
       setEditing(false);
       setSavingState("saved");
       setTimeout(() => setSavingState("idle"), 2000);
@@ -122,6 +124,10 @@ export function InvoiceCard({ invoice: initial, extractionId, fileName, validati
   const [validation, setValidation] = useState(initialValidation ?? null);
   const [dupes, setDupes] = useState(initialDuplicates ?? []);
   const [corrections, setCorrections] = useState(initialCorrections ?? []);
+  // Only ever used as a yes/no: does this organization use purchase orders?
+  // The panel below loads its own state, because it is the one thing on this
+  // card that changes without the document changing.
+  const [poMatch, setPoMatch] = useState(initialPoMatch);
   const currency = invoice.currency || "USD";
   // Only the bank fields actually present, in a stable display order.
   const bankRows = Object.entries(BANK_LABELS)
@@ -287,6 +293,16 @@ export function InvoiceCard({ invoice: initial, extractionId, fileName, validati
           {validation && (
             <div className="mb-5">
               <ValidationPanel validation={validation} />
+            </div>
+          )}
+          {/* Below validation, above the fields. Validation answers "can this
+              document be trusted"; this answers "may it be paid" — and the
+              second question is only worth asking once the first is settled.
+              Rendered only where the organization actually uses purchase
+              orders, which the server decides by sending poMatch at all. */}
+          {poMatch !== null && extractionId && (
+            <div className="mb-5">
+              <PoMatchPanel extractionId={extractionId} />
             </div>
           )}
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">

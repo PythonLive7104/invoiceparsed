@@ -3,6 +3,9 @@ import { Link, NavLink, Outlet, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard,
   History,
+  Building2,
+  ClipboardList,
+  GitCompareArrows,
   CreditCard,
   Webhook,
   Settings,
@@ -18,6 +21,9 @@ import { useAuth } from "@/lib/auth.jsx";
 const nav = [
   { to: "/dashboard", label: "Extract", icon: LayoutDashboard, end: true },
   { to: "/dashboard/history", label: "History", icon: History },
+  { to: "/dashboard/suppliers", label: "Suppliers", icon: Building2 },
+  { to: "/dashboard/purchase-orders", label: "Purchase orders", icon: ClipboardList },
+  { to: "/dashboard/matching", label: "Invoice matching", icon: GitCompareArrows },
   { to: "/dashboard/api", label: "API & Webhooks", icon: Webhook },
   { to: "/dashboard/billing", label: "Billing", icon: CreditCard },
   { to: "/dashboard/settings", label: "Settings", icon: Settings },

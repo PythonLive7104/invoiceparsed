@@ -10,6 +10,12 @@ export function AuthProvider({ children }) {
   // to. The PLAN lives here, not on the user: a team shares one allowance.
   const [organization, setOrganization] = useState(null);
   const [organizations, setOrganizations] = useState([]);
+  // What this member may do in the acting organization, as the server reports
+  // it. Held as data rather than derived from the role here: a copy of the
+  // role table in the frontend would drift from the backend's, and the drift
+  // would surface either as a button that 403s or as a control the server
+  // allows that the UI has silently hidden.
+  const [permissions, setPermissions] = useState([]);
   const [usage, setUsage] = useState(null);
   const [loading, setLoading] = useState(true);
 
@@ -25,6 +31,7 @@ export function AuthProvider({ children }) {
       setUser(data.user);
       setOrganization(data.organization ?? null);
       setOrganizations(data.organizations ?? []);
+      setPermissions(data.permissions ?? []);
       setUsage(data.usage);
       // If they ran an extraction on the landing page before signing up, adopt
       // it into this account now. No-ops when there's no pending demo. Kept
@@ -42,6 +49,7 @@ export function AuthProvider({ children }) {
       setUser(null);
       setOrganization(null);
       setOrganizations([]);
+      setPermissions([]);
       setUsage(null);
     } finally {
       setLoading(false);
@@ -82,6 +90,7 @@ export function AuthProvider({ children }) {
       setUser(data.user);
       setOrganization(data.organization ?? null);
       setOrganizations(data.organizations ?? []);
+      setPermissions(data.permissions ?? []);
       setUsage(data.usage);
       return true;
     } catch {
@@ -128,6 +137,7 @@ export function AuthProvider({ children }) {
     setUser(null);
     setOrganization(null);
     setOrganizations([]);
+    setPermissions([]);
     setUsage(null);
   }, []);
 
@@ -137,6 +147,7 @@ export function AuthProvider({ children }) {
     setUser(null);
     setOrganization(null);
     setOrganizations([]);
+    setPermissions([]);
     setUsage(null);
   }, []);
 
@@ -149,6 +160,7 @@ export function AuthProvider({ children }) {
       setUser(data.user);
       setOrganization(data.organization ?? null);
       setOrganizations(data.organizations ?? []);
+      setPermissions(data.permissions ?? []);
       setUsage(data.usage);
       return data.organization ?? null;
     } catch {
@@ -160,6 +172,11 @@ export function AuthProvider({ children }) {
     user,
     organization,
     organizations,
+    permissions,
+    /** Does the acting member hold this permission? Unknown permission names
+     *  answer false, so a control for a capability this server does not have
+     *  stays hidden rather than appearing for everyone. */
+    can: (permission) => permissions.includes(permission),
     // Convenience: the acting organization's plan. Read this rather than
     // user.plan, which no longer exists.
     plan: organization?.plan ?? "free",

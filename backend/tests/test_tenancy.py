@@ -388,3 +388,71 @@ def test_every_member_can_still_see_usage(client, app, two_tenants):
     r = client.get("/api/usage", headers=org_header(app, bob, shared))
     assert r.status_code == 200
     assert "used" in r.get_json()["usage"]
+
+
+# ─── The permission list the client gates on ─────────────────────────────────
+# The frontend hides controls using these, so they have to be right. Hiding a
+# control is a courtesy rather than a boundary - the server checks again on
+# every request - but a wrong list means either a button that 403s or a
+# capability the UI has silently taken away from someone who has it.
+def test_me_reports_the_members_permissions(app, client):
+    alice = make_user(app, email="perm-alice@example.com")
+    body = client.get("/api/auth/me", headers=auth_header(app, alice)).get_json()
+
+    assert body["role"] == "owner"
+    assert "purchase_orders:write" in body["permissions"]
+    assert "approvals:act" in body["permissions"]
+    assert "suppliers:bank:read" in body["permissions"]
+
+
+def test_the_permission_list_follows_the_acting_organization(app, client):
+    """The role is on the membership, so switching organization switches what
+    the same person may do."""
+    alice = make_user(app, email="perm-owner@example.com")
+    bob = make_user(app, email="perm-bob@example.com")
+    shared = make_org(app, alice, name="Shared perms")
+    join_org(app, shared, bob, role="viewer")
+
+    personal = client.get("/api/auth/me", headers=auth_header(app, bob)).get_json()
+    as_viewer = client.get("/api/auth/me",
+                           headers=org_header(app, bob, shared)).get_json()
+
+    assert personal["role"] == "owner"
+    assert "purchase_orders:write" in personal["permissions"]
+
+    assert as_viewer["role"] == "viewer"
+    assert "purchase_orders:read" in as_viewer["permissions"]
+    assert "purchase_orders:write" not in as_viewer["permissions"]
+    assert "approvals:act" not in as_viewer["permissions"]
+    assert "suppliers:bank:read" not in as_viewer["permissions"]
+
+
+def test_the_organization_endpoint_reports_the_same_permissions(app, client):
+    """Both endpoints answer from roles.permissions_for, so a client that reads
+    either one gates identically."""
+    alice = make_user(app, email="perm-both@example.com")
+    bob = make_user(app, email="perm-both-bob@example.com")
+    shared = make_org(app, alice, name="Both ends")
+    join_org(app, shared, bob, role="accountant")
+
+    headers = org_header(app, bob, shared)
+    from_me = client.get("/api/auth/me", headers=headers).get_json()
+    from_org = client.get("/api/organizations/current", headers=headers).get_json()
+
+    assert from_me["permissions"] == from_org["permissions"]
+    assert from_me["role"] == from_org["role"] == "accountant"
+
+
+def test_the_permission_list_never_exceeds_the_roles_table(app, client):
+    """A guard against the endpoint growing its own idea of what a role grants."""
+    from roles import permissions_for
+
+    for role in ("viewer", "accountant", "procurement_officer", "owner"):
+        alice = make_user(app, email=f"perm-{role}@example.com")
+        org = make_org(app, alice, name=f"Org {role}")
+        member = make_user(app, email=f"perm-{role}-m@example.com")
+        join_org(app, org, member, role=role)
+
+        body = client.get("/api/auth/me",
+                          headers=org_header(app, member, org)).get_json()
+        assert set(body["permissions"]) == permissions_for(role), role
