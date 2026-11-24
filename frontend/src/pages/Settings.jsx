@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import {
   User as UserIcon,
@@ -9,10 +9,16 @@ import {
   Loader2,
   CheckCircle2,
   AlertCircle,
+  Building2,
+  Globe,
+  Coins,
+  Receipt,
 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
+import { api } from "@/lib/api";
 import { useAuth, apiError } from "@/lib/auth.jsx";
+import { PERMISSIONS } from "@/lib/permissions";
 import { formatDate } from "@/lib/utils";
 
 export default function Settings() {
@@ -21,9 +27,12 @@ export default function Settings() {
     <div className="space-y-8">
       <header>
         <h1 className="text-2xl font-semibold tracking-tight text-white">Settings</h1>
-        <p className="mt-1 text-sm text-slate-400">Manage your profile, password and account.</p>
+        <p className="mt-1 text-sm text-slate-400">
+          Manage your organization, profile, password and account.
+        </p>
       </header>
 
+      <OrganizationCard />
       <ProfileCard />
       <PasswordCard hasPassword={user?.hasPassword} />
       <PlanCard />
@@ -84,6 +93,198 @@ function Field({ icon, label, ...rest }) {
     </label>
   );
 }
+
+/**
+ * The organization's own details, as distinct from the signed-in person's.
+ *
+ * Country, currency and tax ID are what exports and reports are built on, and
+ * the getting-started checklist sends people here to fill them in — so this
+ * card existing is what makes that step reachable at all.
+ *
+ * Loaded from the server rather than from the auth context: the context holds
+ * the organization for the header, but these fields change here and nowhere
+ * else, and re-reading on mount is cheaper than keeping a second copy in sync.
+ */
+function OrganizationCard() {
+  const { can } = useAuth();
+  const editable = can(PERMISSIONS.organizationSettings);
+
+  const [form, setForm] = useState(null);
+  const [saved, setSaved] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [ok, setOk] = useState(false);
+  const [error, setError] = useState(null);
+  const [fields, setFields] = useState({});
+
+  useEffect(() => {
+    let active = true;
+    api
+      .get("/api/organizations/current")
+      .then(({ data }) => {
+        if (!active) return;
+        const next = {
+          name: data.organization?.name ?? "",
+          country: data.organization?.country ?? "",
+          currency: data.organization?.currency ?? "",
+          taxId: data.organization?.taxId ?? "",
+        };
+        setForm(next);
+        setSaved(next);
+      })
+      .catch(() => active && setError("Couldn't load your organization."));
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  function set(key, value) {
+    setForm((current) => ({ ...current, [key]: value }));
+    setOk(false);
+  }
+
+  async function onSave(event) {
+    event.preventDefault();
+    setLoading(true);
+    setOk(false);
+    setError(null);
+    setFields({});
+    try {
+      const { data } = await api.patch("/api/organizations/current", {
+        name: form.name.trim(),
+        // Sent uppercased so what is stored matches what is shown; the server
+        // uppercases too, and agreeing with it avoids the field appearing to
+        // change by itself after a save.
+        country: form.country.trim().toUpperCase(),
+        currency: form.currency.trim().toUpperCase(),
+        taxId: form.taxId.trim(),
+      });
+      const next = {
+        name: data.organization?.name ?? "",
+        country: data.organization?.country ?? "",
+        currency: data.organization?.currency ?? "",
+        taxId: data.organization?.taxId ?? "",
+      };
+      setForm(next);
+      setSaved(next);
+      setOk(true);
+    } catch (err) {
+      setFields(err?.response?.data?.fields ?? {});
+      setError(apiError(err, "Couldn't save your business details."));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  if (!form) {
+    return (
+      <Card
+        icon={Building2}
+        title="Organization"
+        description="Your business details, used on exports and reports."
+      >
+        {error ? (
+          <Notice kind="err">{error}</Notice>
+        ) : (
+          <Loader2 size={18} className="animate-spin text-brand-400" />
+        )}
+      </Card>
+    );
+  }
+
+  const unchanged =
+    saved &&
+    ["name", "country", "currency", "taxId"].every(
+      (key) => form[key].trim() === saved[key],
+    );
+
+  return (
+    <Card
+      icon={Building2}
+      title="Organization"
+      description="Your business details. These appear on exports and reports."
+    >
+      <form onSubmit={onSave} className="space-y-4">
+        <Field
+          icon={<Building2 size={16} />}
+          label="Organization name"
+          value={form.name}
+          onChange={(event) => set("name", event.target.value)}
+          placeholder="Acme Ltd"
+          disabled={!editable}
+        />
+        {fields.name && <p className="-mt-2 text-xs text-red-300">{fields.name}</p>}
+
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div>
+            <Field
+              icon={<Globe size={16} />}
+              label="Country"
+              value={form.country}
+              onChange={(event) => set("country", event.target.value.toUpperCase())}
+              placeholder="NG"
+              maxLength={2}
+              disabled={!editable}
+            />
+            <p className="mt-1.5 text-xs text-slate-500">
+              {fields.country ? (
+                <span className="text-red-300">{fields.country}</span>
+              ) : (
+                "Two-letter code, e.g. NG, GB, US."
+              )}
+            </p>
+          </div>
+          <div>
+            <Field
+              icon={<Coins size={16} />}
+              label="Default currency"
+              value={form.currency}
+              onChange={(event) => set("currency", event.target.value.toUpperCase())}
+              placeholder="NGN"
+              maxLength={3}
+              disabled={!editable}
+            />
+            <p className="mt-1.5 text-xs text-slate-500">
+              {fields.currency ? (
+                <span className="text-red-300">{fields.currency}</span>
+              ) : (
+                "Three-letter code, e.g. NGN, USD. Each document keeps its own."
+              )}
+            </p>
+          </div>
+        </div>
+
+        <Field
+          icon={<Receipt size={16} />}
+          label="Tax ID"
+          value={form.taxId}
+          onChange={(event) => set("taxId", event.target.value)}
+          placeholder="TIN / VAT / GST number"
+          maxLength={60}
+          disabled={!editable}
+        />
+        {fields.taxId && <p className="-mt-2 text-xs text-red-300">{fields.taxId}</p>}
+
+        {!editable && (
+          <p className="text-xs text-slate-500">
+            Your role can view these but not change them. An owner or
+            administrator can.
+          </p>
+        )}
+
+        <Notice kind="ok">{ok && "Business details saved."}</Notice>
+        <Notice kind="err">{error}</Notice>
+
+        {editable && (
+          <Button type="submit" disabled={loading || unchanged}>
+            {loading && <Loader2 size={16} className="animate-spin" />}
+            Save changes
+          </Button>
+        )}
+      </form>
+    </Card>
+  );
+}
+
 
 function ProfileCard() {
   const { user, updateProfile } = useAuth();

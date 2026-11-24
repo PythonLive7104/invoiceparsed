@@ -256,3 +256,59 @@ def test_the_endpoint_reports_the_acting_organization(client, app, account):
     body = _state(client, org_header(app, owner, shared))
     assert body["organization"]["name"] == "Second Org"
     assert body["role"] == "owner"
+
+
+# ─── A step must lead somewhere that can finish it ───────────────────────────
+def _frontend(*parts):
+    import pathlib
+
+    return pathlib.Path(__file__).resolve().parents[2].joinpath("frontend", *parts)
+
+
+def test_every_checklist_step_links_to_a_route_the_app_defines(app, client, account):
+    """A step whose arrow goes nowhere is worse than no step at all."""
+    _owner, headers = account
+    body = _state(client, headers)
+
+    routes = _frontend("src", "App.jsx")
+    if not routes.exists():
+        pytest.skip("frontend tree not present")
+    source = routes.read_text(encoding="utf-8")
+
+    for step in body["onboarding"]["steps"]:
+        action = step.get("action")
+        if not action:
+            continue
+        assert action.startswith("/dashboard"), step["key"]
+        # "/dashboard/settings" is declared as a child path "settings" under
+        # the dashboard route, so the tail is what appears in App.jsx.
+        tail = action[len("/dashboard"):].strip("/")
+        if not tail:
+            continue
+        assert f'path="{tail}"' in source, (step["key"], action)
+
+
+def test_the_business_details_step_lands_on_a_page_that_can_fill_it_in(
+    app, client, account
+):
+    """The bug this guards: the step pointed at Settings, Settings had no
+    organization card, and the only way to set country, currency or tax ID was
+    the API. A crude source check, deliberately — the realistic failure is the
+    card being removed or renamed, and a browser test for one form is more
+    machinery than the thing it protects.
+    """
+    _owner, headers = account
+    body = _state(client, headers)
+    step = next(s for s in body["onboarding"]["steps"] if s["key"] == "profile")
+    assert step["action"] == "/dashboard/settings"
+
+    settings = _frontend("src", "pages", "Settings.jsx")
+    if not settings.exists():
+        pytest.skip("frontend tree not present")
+    source = settings.read_text(encoding="utf-8")
+
+    assert "OrganizationCard" in source
+    assert '"/api/organizations/current"' in source
+    # The three fields the step's own description promises.
+    for field in ('set("country"', 'set("currency"', 'set("taxId"'):
+        assert field in source, field
