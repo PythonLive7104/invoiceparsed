@@ -6,20 +6,20 @@ export const PAGE_META = {
   "/": {
     title: "AI invoice, receipt & statement extraction",
     description:
-      "AI parser for invoices, receipts & bank statements — no templates. Turn a PDF or image into clean CSV/JSON in seconds. Free plan, paid from $19/mo.",
+      "AI parser for invoices, receipts & bank statements — no templates. Turn a PDF or image into clean CSV/JSON in seconds, then match invoices against purchase orders before you pay. Free plan, paid from $19/mo.",
     schema: ["software", "faq"],
   },
   "/pricing": {
     title: "Pricing — InvoiceParsed",
     titleRaw: true,
     description:
-      "Pricing for invoice, receipt and bank statement extraction. Start free with 5 documents/month, then scale to Starter, Pro and Business with API access.",
+      "Pricing for invoice, receipt and bank statement extraction. Start free with 5 documents/month, then scale to Starter, Pro and Business — Pro adds suppliers, purchase orders, invoice-to-PO matching and API access.",
     schema: ["faq"],
   },
   "/about": {
     title: "About InvoiceParsed",
     description:
-      "InvoiceParsed helps freelancers and small businesses eliminate manual data entry from invoices, receipts and bank statements with fast, accurate AI extraction. Learn about our mission.",
+      "InvoiceParsed helps freelancers and small businesses eliminate manual data entry from invoices, receipts and bank statements with fast, accurate AI extraction — and on Pro, run purchase orders and invoice matching. Learn about our mission.",
     schema: [],
   },
   "/faq": {

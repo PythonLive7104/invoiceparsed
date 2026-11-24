@@ -4,6 +4,12 @@ Weighted toward the rules that protect money rather than the happy path:
 totals that cannot be dictated by a client, an approved order that cannot be
 edited, approval that is a separate capability from raising an order, and no
 route by which one organization can see another's commitments.
+
+Every fixture here runs on the **Pro** plan, because suppliers, purchase
+orders and matching are a Pro capability (`plans.PAYABLES`). On a free or
+starter plan every endpoint in this module answers 402, which is what
+tests/test_payables_plan.py checks - so do not drop the `plan="pro"`
+arguments below.
 """
 from decimal import Decimal
 
@@ -22,7 +28,7 @@ from tests.conftest import auth_header, join_org, make_org, make_user, org_heade
 # ─── Fixtures and helpers ────────────────────────────────────────────────────
 @pytest.fixture
 def owner(app):
-    return make_user(app, email="owner@example.com")
+    return make_user(app, email="owner@example.com", plan="pro")
 
 
 @pytest.fixture
@@ -241,7 +247,7 @@ def test_numbers_increment(app, client, owner, supplier):
 
 def test_numbering_is_per_organization(app, client, owner, supplier):
     """Two organizations both start at PO-0001. Numbers are theirs, not ours."""
-    other = make_org(app, owner, name="Second Co")
+    other = make_org(app, owner, name="Second Co", plan="pro")
     other_supplier = make_supplier(app, other["id"], name="Vendor B")
 
     first = create_po(client, auth_header(app, owner), supplier["id"])
@@ -349,7 +355,7 @@ def test_an_order_needs_a_supplier(app, client, owner):
 def test_another_organizations_supplier_cannot_be_ordered_from(app, client, owner):
     """The supplier id is a secret of that organization; this must read as
     'does not exist', not 'exists but is not yours'."""
-    stranger = make_user(app, email="stranger@example.com")
+    stranger = make_user(app, email="stranger@example.com", plan="pro")
     foreign = make_supplier(app, stranger["organization_id"], name="Foreign Co")
 
     response = create_po(client, auth_header(app, owner), foreign["id"])
@@ -358,7 +364,7 @@ def test_another_organizations_supplier_cannot_be_ordered_from(app, client, owne
 
 
 def test_an_archived_supplier_cannot_be_ordered_from(app, client, owner):
-    archived = make_supplier(app, make_user(app, email="o2@example.com")["organization_id"])
+    archived = make_supplier(app, make_user(app, email="o2@example.com", plan="pro")["organization_id"])
     # Same organization as the caller, but archived.
     owner_archived = make_supplier(
         app, _org_of(app, owner), name="Retired Co", status="archived"
@@ -524,7 +530,7 @@ def test_an_edit_cannot_move_the_order_to_another_organizations_supplier(
 ):
     headers = auth_header(app, owner)
     po_id = create_po(client, headers, supplier["id"]).get_json()["purchaseOrder"]["id"]
-    stranger = make_user(app, email="s2@example.com")
+    stranger = make_user(app, email="s2@example.com", plan="pro")
     foreign = make_supplier(app, stranger["organization_id"], name="Foreign Two")
 
     response = client.patch(f"/api/purchase-orders/{po_id}",
@@ -742,9 +748,9 @@ def test_you_cannot_approve_your_own_order_where_another_approver_exists(app, cl
     """Raising and authorizing the same commitment is the classic
     internal-control failure. A product that exists to impose financial
     discipline should not be where it happens."""
-    boss = make_user(app, email="boss@example.com")
-    org = make_org(app, boss, name="Team Co")
-    colleague = make_user(app, email="colleague@example.com")
+    boss = make_user(app, email="boss@example.com", plan="pro")
+    org = make_org(app, boss, name="Team Co", plan="pro")
+    colleague = make_user(app, email="colleague@example.com", plan="pro")
     join_org(app, org, colleague, FINANCE_MANAGER)
     vendor = make_supplier(app, org["id"], name="Team Vendor")
 
@@ -767,10 +773,10 @@ def test_you_cannot_approve_your_own_order_where_another_approver_exists(app, cl
 def test_a_colleague_who_cannot_approve_does_not_count_as_a_second_approver(app, client):
     """The rule counts members who hold approvals:act, not members. An
     organization of one approver and five viewers still has one approver."""
-    boss = make_user(app, email="boss2@example.com")
-    org = make_org(app, boss, name="Viewers Co")
-    join_org(app, org, make_user(app, email="v1@example.com"), VIEWER)
-    join_org(app, org, make_user(app, email="v2@example.com"), ACCOUNTANT)
+    boss = make_user(app, email="boss2@example.com", plan="pro")
+    org = make_org(app, boss, name="Viewers Co", plan="pro")
+    join_org(app, org, make_user(app, email="v1@example.com", plan="pro"), VIEWER)
+    join_org(app, org, make_user(app, email="v2@example.com", plan="pro"), ACCOUNTANT)
     vendor = make_supplier(app, org["id"], name="Solo Vendor")
 
     headers = org_header(app, boss, org)
@@ -779,9 +785,9 @@ def test_a_colleague_who_cannot_approve_does_not_count_as_a_second_approver(app,
 
 
 def test_someone_else_raising_the_order_can_always_be_approved(app, client):
-    buyer = make_user(app, email="buyer@example.com")
-    org = make_org(app, buyer, name="Split Co")
-    officer = make_user(app, email="officer@example.com")
+    buyer = make_user(app, email="buyer@example.com", plan="pro")
+    org = make_org(app, buyer, name="Split Co", plan="pro")
+    officer = make_user(app, email="officer@example.com", plan="pro")
     join_org(app, org, officer, PROCUREMENT)
     vendor = make_supplier(app, org["id"], name="Split Vendor")
 
@@ -797,8 +803,8 @@ def test_someone_else_raising_the_order_can_always_be_approved(app, client):
 
 # ─── Permissions ─────────────────────────────────────────────────────────────
 def test_a_viewer_can_read_but_not_create(app, client, owner, supplier):
-    viewer = make_user(app, email="viewer@example.com")
-    org = make_org(app, owner, name="Perm Co")
+    viewer = make_user(app, email="viewer@example.com", plan="pro")
+    org = make_org(app, owner, name="Perm Co", plan="pro")
     join_org(app, org, viewer, VIEWER)
     vendor = make_supplier(app, org["id"], name="Perm Vendor")
     create_po(client, org_header(app, owner, org), vendor["id"])
@@ -811,8 +817,8 @@ def test_a_viewer_can_read_but_not_create(app, client, owner, supplier):
 def test_an_accountant_cannot_raise_a_purchase_order(app, client, owner):
     """Accountants record what happened; they do not commit the organization to
     spending. purchase_orders:write is a procurement capability."""
-    accountant = make_user(app, email="acct@example.com")
-    org = make_org(app, owner, name="Acct Co")
+    accountant = make_user(app, email="acct@example.com", plan="pro")
+    org = make_org(app, owner, name="Acct Co", plan="pro")
     join_org(app, org, accountant, ACCOUNTANT)
     vendor = make_supplier(app, org["id"], name="Acct Vendor")
 
@@ -821,8 +827,8 @@ def test_an_accountant_cannot_raise_a_purchase_order(app, client, owner):
 
 
 def test_a_procurement_officer_can_raise_but_not_approve(app, client, owner):
-    officer = make_user(app, email="proc@example.com")
-    org = make_org(app, owner, name="Proc Co")
+    officer = make_user(app, email="proc@example.com", plan="pro")
+    org = make_org(app, owner, name="Proc Co", plan="pro")
     join_org(app, org, officer, PROCUREMENT)
     vendor = make_supplier(app, org["id"], name="Proc Vendor")
 
@@ -835,8 +841,8 @@ def test_a_procurement_officer_can_raise_but_not_approve(app, client, owner):
 
 
 def test_an_approver_can_approve_but_not_raise(app, client, owner):
-    approver = make_user(app, email="appr@example.com")
-    org = make_org(app, owner, name="Appr Co")
+    approver = make_user(app, email="appr@example.com", plan="pro")
+    org = make_org(app, owner, name="Appr Co", plan="pro")
     join_org(app, org, approver, APPROVER)
     vendor = make_supplier(app, org["id"], name="Appr Vendor")
 
@@ -859,7 +865,7 @@ def test_purchase_orders_require_authentication(client):
 def test_one_organization_cannot_read_anothers_orders(app, client, owner, supplier):
     po_id = create_po(client, auth_header(app, owner),
                       supplier["id"]).get_json()["purchaseOrder"]["id"]
-    stranger = make_user(app, email="nosy@example.com")
+    stranger = make_user(app, email="nosy@example.com", plan="pro")
     headers = auth_header(app, stranger)
 
     assert client.get(f"/api/purchase-orders/{po_id}", headers=headers).status_code == 404
@@ -875,7 +881,7 @@ def test_one_organization_cannot_read_anothers_orders(app, client, owner, suppli
 
 def test_the_list_shows_only_the_callers_organization(app, client, owner, supplier):
     create_po(client, auth_header(app, owner), supplier["id"])
-    stranger = make_user(app, email="other@example.com")
+    stranger = make_user(app, email="other@example.com", plan="pro")
     other_vendor = make_supplier(app, stranger["organization_id"], name="Theirs")
     create_po(client, auth_header(app, stranger), other_vendor["id"])
 
@@ -885,7 +891,7 @@ def test_the_list_shows_only_the_callers_organization(app, client, owner, suppli
 
 
 def test_switching_organization_switches_the_orders(app, client, owner, supplier):
-    other = make_org(app, owner, name="Second")
+    other = make_org(app, owner, name="Second", plan="pro")
     other_vendor = make_supplier(app, other["id"], name="Second Vendor")
     create_po(client, auth_header(app, owner), supplier["id"])
     create_po(client, org_header(app, owner, other), other_vendor["id"])
@@ -1102,7 +1108,7 @@ def test_another_organization_cannot_download_an_attachment(app, client, owner, 
     po_id = create_po(client, headers, supplier["id"]).get_json()["purchaseOrder"]["id"]
     attachment_id = upload(client, headers, po_id).get_json()["attachment"]["id"]
 
-    stranger = auth_header(app, make_user(app, email="thief@example.com"))
+    stranger = auth_header(app, make_user(app, email="thief@example.com", plan="pro"))
     assert client.get(f"/api/purchase-orders/{po_id}/attachments/{attachment_id}",
                       headers=stranger).status_code == 404
 

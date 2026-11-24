@@ -29,6 +29,7 @@ from documents import load_document
 from extensions import db
 from models import Extraction, InvoiceMatch, PurchaseOrder, Supplier, User
 from money import as_json, rate, to_decimal
+from plans import PAYABLES, PAYABLES_FEATURE
 from po_matching import (
     evaluate,
     find_candidates,
@@ -41,7 +42,12 @@ from roles import (
     ORG_SETTINGS,
     PURCHASE_ORDERS_READ,
 )
-from tenancy import current_organization, require_permission, scoped
+from tenancy import (
+    current_organization,
+    require_capability,
+    require_permission,
+    scoped,
+)
 
 match_bp = Blueprint("matching", __name__, url_prefix="/api/matching")
 logger = logging.getLogger(__name__)
@@ -154,6 +160,7 @@ def _detail(record, match, document=None):
 # ─── Settings ────────────────────────────────────────────────────────────────
 @match_bp.get("/settings")
 @api_or_login_required
+@require_capability(PAYABLES, PAYABLES_FEATURE)
 @require_permission(PURCHASE_ORDERS_READ)
 def get_settings():
     organization = current_organization()
@@ -167,6 +174,7 @@ def get_settings():
 
 @match_bp.put("/settings")
 @api_or_login_required
+@require_capability(PAYABLES, PAYABLES_FEATURE)
 @require_permission(ORG_SETTINGS)
 def update_settings():
     """Change the tolerances.
@@ -217,6 +225,7 @@ def update_settings():
 # ─── Exception list ──────────────────────────────────────────────────────────
 @match_bp.get("/invoices")
 @api_or_login_required
+@require_capability(PAYABLES, PAYABLES_FEATURE)
 @require_permission(PURCHASE_ORDERS_READ)
 def list_matches():
     """Invoices and where each one stands against its order.
@@ -367,6 +376,7 @@ def list_matches():
 
 @match_bp.get("/summary")
 @api_or_login_required
+@require_capability(PAYABLES, PAYABLES_FEATURE)
 @require_permission(PURCHASE_ORDERS_READ)
 def summary():
     """Counts for the exception dashboard.
@@ -450,6 +460,7 @@ def summary():
 # ─── One invoice ─────────────────────────────────────────────────────────────
 @match_bp.get("/invoices/<eid>")
 @api_or_login_required
+@require_capability(PAYABLES, PAYABLES_FEATURE)
 @require_permission(PURCHASE_ORDERS_READ)
 def get_match(eid):
     record = _invoice(eid)
@@ -461,6 +472,7 @@ def get_match(eid):
 
 @match_bp.get("/invoices/<eid>/candidates")
 @api_or_login_required
+@require_capability(PAYABLES, PAYABLES_FEATURE)
 @require_permission(PURCHASE_ORDERS_READ)
 def candidates(eid):
     """Orders this invoice might belong to, for someone choosing by hand."""
@@ -505,6 +517,7 @@ def candidates(eid):
 
 @match_bp.post("/invoices/<eid>/link")
 @api_or_login_required
+@require_capability(PAYABLES, PAYABLES_FEATURE)
 @require_permission(DOCUMENTS_WRITE)
 def link(eid):
     """Attach this invoice to an order, replacing any existing link.
@@ -564,6 +577,7 @@ def link(eid):
 
 @match_bp.post("/invoices/<eid>/reject")
 @api_or_login_required
+@require_capability(PAYABLES, PAYABLES_FEATURE)
 @require_permission(DOCUMENTS_WRITE)
 def reject(eid):
     """Say that the suggested order is not the right one.
@@ -597,6 +611,7 @@ def reject(eid):
 
 @match_bp.delete("/invoices/<eid>")
 @api_or_login_required
+@require_capability(PAYABLES, PAYABLES_FEATURE)
 @require_permission(DOCUMENTS_WRITE)
 def unlink(eid):
     """Remove the link entirely, so matching can suggest again from scratch."""
@@ -620,6 +635,7 @@ def unlink(eid):
 
 @match_bp.post("/invoices/<eid>/override")
 @api_or_login_required
+@require_capability(PAYABLES, PAYABLES_FEATURE)
 @require_permission(APPROVALS_ACT)
 def override(eid):
     """Accept this invoice's discrepancies, with a reason, on the record.
@@ -685,6 +701,7 @@ def override(eid):
 
 @match_bp.delete("/invoices/<eid>/override")
 @api_or_login_required
+@require_capability(PAYABLES, PAYABLES_FEATURE)
 @require_permission(APPROVALS_ACT)
 def withdraw_override(eid):
     """Withdraw an acceptance, putting the invoice back among the exceptions."""
@@ -706,6 +723,7 @@ def withdraw_override(eid):
 # ─── From the order's side ───────────────────────────────────────────────────
 @match_bp.get("/purchase-orders/<po_id>/invoices")
 @api_or_login_required
+@require_capability(PAYABLES, PAYABLES_FEATURE)
 @require_permission(PURCHASE_ORDERS_READ)
 def invoices_for_order(po_id):
     """Every invoice billed against one order, and what is left on it.

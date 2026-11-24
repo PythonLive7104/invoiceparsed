@@ -24,6 +24,7 @@ from flask import g, jsonify, request
 
 from extensions import db
 from models import Organization, OrganizationMembership
+from plans import get_plan, plan_allows
 from roles import DEFAULT_ROLE, role_allows
 
 ORG_HEADER = "X-Organization-Id"
@@ -186,6 +187,63 @@ def current_role() -> str | None:
 def has_permission(permission: str) -> bool:
     role = current_role()
     return bool(role) and role_allows(role, permission)
+
+
+def require_capability(capability: str, feature: str):
+    """Refuse the request unless the acting organization's PLAN includes
+    `capability`.
+
+    Distinct from `require_permission`, and both can apply to one route,
+    because they answer different questions: a permission is "may this person
+    do this", a capability is "has this organization bought this". The error
+    codes differ for the same reason - a 403 tells you to ask an administrator,
+    a 402 tells you to upgrade, and sending one when you meant the other
+    sends people to the wrong place.
+
+    Applied as a per-view decorator rather than a blueprint `before_request`
+    hook: the hook would run before the auth decorator had resolved the
+    organization, so it would always see the free-plan default and gate
+    everybody.
+    """
+    def decorator(fn):
+        @wraps(fn)
+        def wrapper(*args, **kwargs):
+            plan = current_plan()
+            if not plan_allows(plan, capability):
+                lowest = _lowest_plan_with(capability)
+                return (
+                    jsonify({
+                        "error": (
+                            f"{feature} is included on the "
+                            f"{lowest} plan and above."
+                            if lowest else f"{feature} is not available on your plan."
+                        ),
+                        "code": "UPGRADE_REQUIRED",
+                        "capability": capability,
+                        "plan": plan,
+                    }),
+                    402,
+                )
+            return fn(*args, **kwargs)
+
+        return wrapper
+
+    return decorator
+
+
+def _lowest_plan_with(capability: str) -> str | None:
+    """The cheapest plan that includes `capability`, named in the error.
+
+    Read from the plan table rather than written into each message, so moving a
+    capability between plans does not leave the wrong plan name in an error
+    somewhere.
+    """
+    from plans import PLAN_ORDER
+
+    for plan_id in PLAN_ORDER:
+        if plan_allows(plan_id, capability):
+            return get_plan(plan_id)["name"]
+    return None
 
 
 def require_permission(permission: str):

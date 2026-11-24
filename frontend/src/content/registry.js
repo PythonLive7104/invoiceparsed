@@ -677,6 +677,7 @@ export const PRICING_FAQS = [
   { q: "Can I change plans later?", a: "Yes, you can upgrade or downgrade at any time from your dashboard; changes take effect immediately." },
   { q: "What counts as one invoice?", a: "Each completed extraction counts as one invoice against your monthly limit. A multi-page PDF processed as a single invoice counts once." },
   { q: "Do you offer an API?", a: "Yes. REST API access and webhooks are included on the Pro and Business plans for automating invoice processing." },
+  { q: "Which plans include purchase orders and invoice matching?", a: "Suppliers, purchase orders and invoice-to-PO matching are included on the Pro ($49) and Business ($99) plans. Extraction, exports and history are available on every plan, including Free." },
 ];
 
 // Site-wide FAQ shown on / and /faq (also rendered as FAQPage JSON-LD).
@@ -690,6 +691,11 @@ export const SITE_FAQS = [
   { q: "What happens to my documents after processing?", a: "Your documents are processed solely to extract the data you request. They are never used to train AI models and are never sold or shared with third parties." },
   { q: "Does InvoiceParsed have an API?", a: "Yes. A REST API and webhooks are included on the Pro and Business plans — POST a PDF or image to /api/extract and get structured JSON back, ideal for automating invoice processing in your own apps." },
   { q: "Does it support multiple currencies?", a: "Yes. InvoiceParsed detects and preserves the currency on each document, so invoices and receipts in USD, EUR, GBP and other currencies are extracted accurately with the correct currency code." },
+  { q: "Does InvoiceParsed do more than extraction?", a: "Yes. On the Pro plan and above InvoiceParsed also runs accounts payable: supplier records built automatically from your invoices, purchase orders with line items and an approval step, and automatic invoice-to-PO matching that compares prices, quantities, taxes and totals before you pay." },
+  { q: "What is invoice-to-PO matching?", a: "Invoice-to-PO matching checks an arriving invoice against the purchase order it bills. InvoiceParsed links the invoice to its order using the PO number on the document, then compares every line — unit price, quantity, tax rate — and the total, flagging price rises, quantities above what was ordered, lines that were never ordered, and invoices billed against an order nobody approved. Over-invoicing is detected across several invoices against the same order, not just within one invoice." },
+  { q: "Can InvoiceParsed create purchase orders?", a: "Yes, on Pro and above. You can raise a purchase order with line items, taxes, delivery dates and payment terms, submit it for approval, and download a PDF to send the supplier. Totals are always computed from the lines rather than typed in, approval is a separate permission from raising an order, and nobody can approve an order they raised themselves." },
+  { q: "Does InvoiceParsed approve or pay invoices automatically?", a: "No. InvoiceParsed never pays anything and never approves an invoice that fails a check. It reports what disagrees with the purchase order and marks the invoice as blocked; clearing a blocking discrepancy needs someone with approval authority to accept it in writing, and their name and reason stay on the record." },
+  { q: "Can I control who approves what?", a: "Yes. InvoiceParsed has eight roles — owner, administrator, finance manager, accountant, procurement officer, department manager, approver and viewer — so the person entering invoices need not be the person approving them. Supplier bank details sit behind their own separate permission, because they are the highest-value target in the dataset." },
 ];
 
 /** Build the full list of sitemap entries from the registry. */

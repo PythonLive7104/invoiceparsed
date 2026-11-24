@@ -11,6 +11,12 @@ things these tests care about more than anything else:
 The arithmetic assertions use exact decimal strings throughout. A test that
 accepted "about right" would pass against the float bug this whole codebase is
 arranged to prevent.
+
+Every fixture here runs on the **Pro** plan, because suppliers, purchase
+orders and matching are a Pro capability (`plans.PAYABLES`). On a free or
+starter plan every endpoint in this module answers 402, which is what
+tests/test_payables_plan.py checks - so do not drop the `plan="pro"`
+arguments below.
 """
 import io
 from decimal import Decimal
@@ -453,8 +459,8 @@ def test_changing_tolerances_needs_the_admin_gate_not_the_invoice_gate(
 ):
     """Widening a tolerance is how you switch the control off, so the people
     who process invoices all day cannot do it."""
-    org = make_org(app, owner, name="Acme")
-    clerk = make_user(app, email="clerk@example.com")
+    org = make_org(app, owner, name="Acme", plan="pro")
+    clerk = make_user(app, email="clerk@example.com", plan="pro")
     join_org(app, org, clerk, ACCOUNTANT)
     headers = {**auth_header(app, clerk), **org_header(app, clerk, org)}
 
@@ -467,8 +473,8 @@ def test_changing_tolerances_needs_the_admin_gate_not_the_invoice_gate(
 def test_a_viewer_cannot_even_read_the_settings_of_another_organization(
     app, client, owner
 ):
-    org = make_org(app, owner, name="Acme")
-    outsider = make_user(app, email="outsider@example.com")
+    org = make_org(app, owner, name="Acme", plan="pro")
+    outsider = make_user(app, email="outsider@example.com", plan="pro")
     response = client.get("/api/matching/settings",
                           headers={**auth_header(app, outsider),
                                    **{"X-Organization-Id": org["id"]}})
@@ -1585,8 +1591,8 @@ def test_an_invoice_cannot_be_linked_to_another_organizations_order(
 
 
 def test_a_viewer_cannot_link_an_invoice_to_an_order(app, client, owner, supplier):
-    org = make_org(app, owner, name="Acme")
-    watcher = make_user(app, email="watcher@example.com")
+    org = make_org(app, owner, name="Acme", plan="pro")
+    watcher = make_user(app, email="watcher@example.com", plan="pro")
     join_org(app, org, watcher, VIEWER)
     po = create_po(client, auth_header(app, owner), supplier["id"])
     eid = make_invoice(app, owner, invoice_doc(reference=None))
@@ -1603,8 +1609,8 @@ def test_a_viewer_cannot_link_an_invoice_to_an_order(app, client, owner, supplie
 def test_an_accountant_can_link_because_that_is_their_job(app, client, owner):
     """Linking needs documents:write, not purchase_orders:write: it is a fact
     about the invoice, and accounts payable is who establishes it."""
-    org = make_org(app, owner, name="Acme")
-    clerk = make_user(app, email="clerk@example.com")
+    org = make_org(app, owner, name="Acme", plan="pro")
+    clerk = make_user(app, email="clerk@example.com", plan="pro")
     join_org(app, org, clerk, ACCOUNTANT)
     owner_headers = {**auth_header(app, owner), **org_header(app, owner, org)}
     supplier_here = make_supplier(app, org["id"], name="Shared Vendor")
@@ -1721,8 +1727,8 @@ def test_an_accepted_discrepancy_names_the_person_and_keeps_the_findings(
 def test_accepting_discrepancies_needs_approval_authority(app, client, owner):
     """Gated on approvals:act, not on the permission used to process invoices:
     clearing a blocking finding is a decision somebody signs."""
-    org = make_org(app, owner, name="Acme")
-    clerk = make_user(app, email="clerk@example.com")
+    org = make_org(app, owner, name="Acme", plan="pro")
+    clerk = make_user(app, email="clerk@example.com", plan="pro")
     join_org(app, org, clerk, ACCOUNTANT)
     supplier_here = make_supplier(app, org["id"], name="Shared Vendor")
     owner_headers = {**auth_header(app, owner), **org_header(app, owner, org)}
@@ -1752,7 +1758,7 @@ def test_accepting_discrepancies_needs_approval_authority(app, client, owner):
                        json={"note": "fine"},
                        headers=clerk_headers).status_code == 403
 
-    approver = make_user(app, email="approver@example.com")
+    approver = make_user(app, email="approver@example.com", plan="pro")
     join_org(app, org, approver, APPROVER)
     approver_headers = {**auth_header(app, approver),
                         **org_header(app, approver, org)}
@@ -2249,7 +2255,7 @@ def test_the_order_endpoint_still_reports_bank_details_nowhere(
 def test_a_finance_manager_and_a_procurement_officer_can_both_read_matches(
     app, client, owner, supplier
 ):
-    org = make_org(app, owner, name="Acme")
+    org = make_org(app, owner, name="Acme", plan="pro")
     for email, role in (("fm@example.com", FINANCE_MANAGER),
                         ("po@example.com", PROCUREMENT)):
         member = make_user(app, email=email)

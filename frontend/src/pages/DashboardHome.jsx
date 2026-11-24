@@ -5,6 +5,7 @@ import { ExtractWorkspace } from "@/components/dashboard/ExtractWorkspace";
 import { UsageMeter } from "@/components/dashboard/UsageMeter";
 import { UsageStats } from "@/components/dashboard/UsageStats";
 import { SetupChecklist } from "@/components/dashboard/SetupChecklist";
+import { WhatsNew } from "@/components/dashboard/WhatsNew";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth.jsx";
 import { formatDate, formatMoney } from "@/lib/utils";
@@ -43,6 +44,12 @@ export default function DashboardHome() {
       {/* Setup first while it is unfinished; it hides itself once the required
           steps are done, so it does not become permanent furniture. */}
       <SetupChecklist />
+
+      {/* Below setup, above everything else. A brand-new account should finish
+          getting started first; an existing customer sees no checklist, so for
+          them this is the top of the page — which is the point, since they
+          never revisit the landing page that announces anything. */}
+      <WhatsNew />
 
       {/* Full width above the fold: these are the numbers that tell you
           whether anything needs doing today. */}

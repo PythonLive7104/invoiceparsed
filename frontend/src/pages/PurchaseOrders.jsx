@@ -10,6 +10,11 @@ import { PoStatusBadge } from "@/components/dashboard/PoStatus";
 import { cn, formatDate, formatMoney } from "@/lib/utils";
 import { useAuth } from "@/lib/auth.jsx";
 import { PERMISSIONS } from "@/lib/permissions";
+import {
+  PAYABLES,
+  PAYABLES_COPY,
+  UpgradePanel,
+} from "@/components/dashboard/UpgradePanel";
 
 /**
  * Purchase orders.
@@ -31,7 +36,7 @@ const FILTERS = [
 ];
 
 export default function PurchaseOrders() {
-  const { can } = useAuth();
+  const { can, has } = useAuth();
   // Raising an order is a procurement capability; an accountant or viewer can
   // read the list but not add to it. The server refuses either way - this just
   // keeps a button from appearing that would answer 403.
@@ -44,7 +49,14 @@ export default function PurchaseOrders() {
   const [summary, setSummary] = useState(null);
   const [creating, setCreating] = useState(false);
 
+  // A locked plan gets the upgrade panel below instead of the list, so
+  // nothing here should go to the server: every payables endpoint would
+  // answer 402. Short-circuited inside the loaders rather than before the
+  // hooks, because skipping a hook would change the hook order.
+  const locked = !has(PAYABLES);
+
   const load = useCallback(() => {
+    if (locked) return undefined;
     let active = true;
     setLoading(true);
     const params = new URLSearchParams({ page: String(page), perPage: "25" });
@@ -58,7 +70,7 @@ export default function PurchaseOrders() {
     return () => {
       active = false;
     };
-  }, [query, status, page]);
+  }, [query, status, page, locked]);
 
   useEffect(() => {
     const timer = setTimeout(load, 250);   // debounce typing in the search box
@@ -66,16 +78,22 @@ export default function PurchaseOrders() {
   }, [load]);
 
   const loadSummary = useCallback(() => {
+    if (locked) return;
     api
       .get("/api/purchase-orders/summary")
       .then(({ data: body }) => setSummary(body))
       .catch(() => setSummary(null));
-  }, []);
+  }, [locked]);
 
   useEffect(loadSummary, [loadSummary]);
 
   const rows = data?.purchaseOrders ?? [];
   const pages = data?.pages ?? 1;
+
+  // Rendered instead of the list. An early return of JSX below every
+  // hook, so the hook order never changes.
+  if (locked)
+    return <UpgradePanel {...PAYABLES_COPY.purchaseOrders} icon={ClipboardList} />;
 
   return (
     <div className="space-y-6">

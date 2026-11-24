@@ -177,6 +177,18 @@ export function AuthProvider({ children }) {
      *  answer false, so a control for a capability this server does not have
      *  stays hidden rather than appearing for everyone. */
     can: (permission) => permissions.includes(permission),
+    /** Does the acting organization's PLAN include this capability?
+     *
+     *  Separate from `can()`, and both are needed, because they answer
+     *  different questions: `can` is "may this person", `has` is "has this
+     *  organization bought it". A control the plan does not include should
+     *  offer an upgrade; a control the role does not allow should not appear.
+     *
+     *  Read from the server's capability list on every `/me`, so there is no
+     *  copy of the plan table here to fall out of step with plans.py. An
+     *  unknown name answers false, which locks a control rather than
+     *  unlocking one. */
+    has: (capability) => Boolean(usage?.capabilities?.[capability]),
     // Convenience: the acting organization's plan. Read this rather than
     // user.plan, which no longer exists.
     plan: organization?.plan ?? "free",

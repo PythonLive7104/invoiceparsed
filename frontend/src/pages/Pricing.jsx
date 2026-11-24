@@ -24,8 +24,9 @@ export default function Pricing() {
           {/* Answer-first paragraph (AEO) */}
           <p className="mt-4 text-lg leading-relaxed text-slate-300">
             InvoiceParsed pricing starts free with 5 invoices per month. Paid plans
-            — Starter ($19), Pro ($49) and Business ($99) — add batch upload,
-            multi-page invoices, the REST API and webhooks as you scale.
+            — Starter ($19), Pro ($49) and Business ($99) — add batch upload and
+            multi-page invoices, then suppliers, purchase orders, invoice-to-PO
+            matching and the REST API from Pro.
           </p>
         </header>
 

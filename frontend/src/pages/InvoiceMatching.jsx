@@ -14,6 +14,11 @@ import { api, apiError } from "@/lib/api";
 import { Button } from "@/components/ui/Button";
 import { useAuth } from "@/lib/auth.jsx";
 import { PERMISSIONS } from "@/lib/permissions";
+import {
+  PAYABLES,
+  PAYABLES_COPY,
+  UpgradePanel,
+} from "@/components/dashboard/UpgradePanel";
 import { cn, formatDate, formatMoney } from "@/lib/utils";
 import { poStatusLabel } from "@/components/dashboard/PoStatus";
 import { MatchOutcomeBadge } from "@/components/dashboard/MatchStatus";
@@ -42,7 +47,7 @@ const FILTERS = [
 ];
 
 export default function InvoiceMatching() {
-  const { can } = useAuth();
+  const { can, has } = useAuth();
   const canConfigure = can(PERMISSIONS.organizationSettings);
 
   const [state, setState] = useState("exceptions");
@@ -53,7 +58,14 @@ export default function InvoiceMatching() {
   const [summary, setSummary] = useState(null);
   const [tuning, setTuning] = useState(false);
 
+  // A locked plan gets the upgrade panel below instead of the list, so
+  // nothing here should go to the server: every payables endpoint would
+  // answer 402. Short-circuited inside the loaders rather than before the
+  // hooks, because skipping a hook would change the hook order.
+  const locked = !has(PAYABLES);
+
   const load = useCallback(() => {
+    if (locked) return undefined;
     let active = true;
     setLoading(true);
     const params = new URLSearchParams({ page: String(page), pageSize: "25" });
@@ -67,7 +79,7 @@ export default function InvoiceMatching() {
     return () => {
       active = false;
     };
-  }, [page, state, query]);
+  }, [page, state, query, locked]);
 
   useEffect(() => {
     const timer = setTimeout(load, query ? 300 : 0);
@@ -75,6 +87,7 @@ export default function InvoiceMatching() {
   }, [load, query]);
 
   useEffect(() => {
+    if (locked) return undefined;
     let active = true;
     api
       .get("/api/matching/summary")
@@ -83,11 +96,16 @@ export default function InvoiceMatching() {
     return () => {
       active = false;
     };
-  }, [data]);
+  }, [data, locked]);
 
   const rows = data?.items ?? [];
   const pageSize = data?.pageSize ?? 25;
   const pages = Math.max(1, Math.ceil((data?.total ?? 0) / pageSize));
+
+  // Rendered instead of the list. An early return of JSX below every
+  // hook, so the hook order never changes.
+  if (locked)
+    return <UpgradePanel {...PAYABLES_COPY.matching} icon={GitCompareArrows} />;
 
   return (
     <div className="space-y-6">

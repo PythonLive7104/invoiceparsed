@@ -1,4 +1,12 @@
-// Mirrors backend/plans.py — used for marketing & billing display.
+// Mirrors backend/plans.py — used for marketing & billing display ONLY.
+//
+// Display only is load-bearing: the pricing page is prerendered at build time
+// and cannot ask the server, so the table is duplicated here. Enforcement
+// lives entirely in backend/plans.py and the server's capability list (read in
+// the app through `has()` in lib/auth.jsx) — nothing in the product is
+// permitted or refused on the strength of this file. Keep the two in step
+// anyway: a pricing page promising a capability the backend does not grant is
+// a support ticket.
 export const PLANS = {
   free: {
     id: "free",
@@ -12,6 +20,7 @@ export const PLANS = {
     api: false,
     webhooks: false,
     statements: false,
+    payables: false,
     features: [
       "5 invoices / month",
       "PDF & image upload",
@@ -32,6 +41,7 @@ export const PLANS = {
     api: false,
     webhooks: false,
     statements: false,
+    payables: false,
     features: [
       "100 invoices / month",
       "Multi-file batch upload",
@@ -52,12 +62,13 @@ export const PLANS = {
     api: true,
     webhooks: true,
     statements: false,
+    payables: true,
     features: [
-      "Unlimited invoices",
-      "Multi-file batch upload",
-      "Multi-page invoices",
-      "REST API access",
-      "Webhook integrations",
+      "Everything in Starter",
+      "Unlimited invoices & receipts",
+      "Suppliers, purchase orders & invoice matching",
+      "Approvals with roles & permissions",
+      "REST API access + webhooks",
     ],
   },
   business: {
@@ -72,6 +83,7 @@ export const PLANS = {
     api: true,
     webhooks: true,
     statements: true,
+    payables: true,
     statementLimit: 200,
     features: [
       "Everything in Pro",

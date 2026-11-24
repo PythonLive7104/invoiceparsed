@@ -1,4 +1,12 @@
-"""Plan definitions, free-tier limits, and monthly usage calculation."""
+"""Plan definitions, free-tier limits, and monthly usage calculation.
+
+The `features` lists here are marketing copy and are NOT served to any
+client; the pricing page and the in-app billing page both read
+frontend/src/lib/plans.js, which is prerendered at build time. They are kept
+identical to that file anyway, so the two never describe the same plan two
+different ways. What IS enforced from this file is the capability flags, via
+`plan_allows` and `capabilities`.
+"""
 from datetime import datetime
 
 PLANS = {
@@ -16,6 +24,7 @@ PLANS = {
         "api": False,
         "webhooks": False,
         "statements": False,
+        "payables": False,
         "features": [
             "5 invoices / month",
             "PDF & image upload",
@@ -36,6 +45,7 @@ PLANS = {
         "api": False,
         "webhooks": False,
         "statements": False,
+        "payables": False,
         "features": [
             "100 invoices / month",
             "Multi-file batch upload",
@@ -56,12 +66,13 @@ PLANS = {
         "api": True,
         "webhooks": True,
         "statements": False,
+        "payables": True,
         "features": [
-            "Unlimited invoices",
-            "Multi-file batch upload",
-            "Multi-page invoices",
-            "REST API access",
-            "Webhook integrations",
+            "Everything in Starter",
+            "Unlimited invoices & receipts",
+            "Suppliers, purchase orders & invoice matching",
+            "Approvals with roles & permissions",
+            "REST API access + webhooks",
         ],
     },
     "business": {
@@ -76,6 +87,7 @@ PLANS = {
         "api": True,
         "webhooks": True,
         "statements": True,
+        "payables": True,
         # Bank statements are far costlier to extract than invoices/receipts, so
         # they get their own monthly allowance even though invoices/receipts are
         # unlimited. None would mean unlimited statements.
@@ -91,9 +103,22 @@ PLANS = {
 }
 
 # Capabilities exposed to clients / used for server-side gating.
-CAPABILITIES = ("batch", "multiPage", "api", "webhooks", "statements")
+#
+# `payables` covers the whole accounts-payable module: suppliers, purchase
+# orders and invoice-to-PO matching. One flag rather than three, because they
+# are not separable - a purchase order is worthless without a supplier to order
+# from, and matching is worthless without orders to match against. Selling
+# them apart would mean selling two thirds of a workflow.
+CAPABILITIES = ("batch", "multiPage", "api", "webhooks", "statements", "payables")
 
 PLAN_ORDER = ["free", "starter", "pro", "business"]
+
+# The payables paywall, named once. Three route modules enforce it, and
+# three slightly different descriptions of the same boundary is how a
+# product ends up telling customers two different things.
+PAYABLES = "payables"
+PAYABLES_FEATURE = "Suppliers, purchase orders and invoice matching"
+
 
 
 def get_plan(plan_id: str) -> dict:

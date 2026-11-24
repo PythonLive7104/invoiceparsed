@@ -31,6 +31,7 @@ from config import Config
 from extensions import db
 from models import PurchaseOrder, PurchaseOrderAttachment, Supplier, User
 from money import as_json
+from plans import PAYABLES, PAYABLES_FEATURE
 from purchase_orders import (
     TransitionError,
     next_po_number,
@@ -43,7 +44,12 @@ from roles import (
     PURCHASE_ORDERS_READ,
     PURCHASE_ORDERS_WRITE,
 )
-from tenancy import current_organization, require_permission, scoped
+from tenancy import (
+    current_organization,
+    require_capability,
+    require_permission,
+    scoped,
+)
 
 purchase_order_bp = Blueprint("purchase_orders", __name__,
                               url_prefix="/api/purchase-orders")
@@ -186,6 +192,7 @@ def _resolve_supplier(organization_id: str, supplier_id) -> tuple[Supplier | Non
 # ─── List and summary ────────────────────────────────────────────────────────
 @purchase_order_bp.get("")
 @api_or_login_required
+@require_capability(PAYABLES, PAYABLES_FEATURE)
 @require_permission(PURCHASE_ORDERS_READ)
 def list_purchase_orders():
     query = scoped(PurchaseOrder)
@@ -246,6 +253,7 @@ def list_purchase_orders():
 
 @purchase_order_bp.get("/summary")
 @api_or_login_required
+@require_capability(PAYABLES, PAYABLES_FEATURE)
 @require_permission(PURCHASE_ORDERS_READ)
 def summary():
     """Counts by status, and open commitment per currency.
@@ -293,6 +301,7 @@ def summary():
 # ─── Create, read, update ────────────────────────────────────────────────────
 @purchase_order_bp.post("")
 @api_or_login_required
+@require_capability(PAYABLES, PAYABLES_FEATURE)
 @require_permission(PURCHASE_ORDERS_WRITE)
 def create_purchase_order():
     data = request.get_json(silent=True) or {}
@@ -352,6 +361,7 @@ def create_purchase_order():
 
 @purchase_order_bp.get("/<po_id>")
 @api_or_login_required
+@require_capability(PAYABLES, PAYABLES_FEATURE)
 @require_permission(PURCHASE_ORDERS_READ)
 def get_purchase_order(po_id):
     po = _load(po_id)
@@ -362,6 +372,7 @@ def get_purchase_order(po_id):
 
 @purchase_order_bp.patch("/<po_id>")
 @api_or_login_required
+@require_capability(PAYABLES, PAYABLES_FEATURE)
 @require_permission(PURCHASE_ORDERS_WRITE)
 def update_purchase_order(po_id):
     po = _load(po_id)
@@ -431,6 +442,7 @@ def _transition_response(po: PurchaseOrder, status: str, *, reason=None):
 
 @purchase_order_bp.post("/<po_id>/submit")
 @api_or_login_required
+@require_capability(PAYABLES, PAYABLES_FEATURE)
 @require_permission(PURCHASE_ORDERS_WRITE)
 def submit_purchase_order(po_id):
     """Send a draft for approval."""
@@ -442,6 +454,7 @@ def submit_purchase_order(po_id):
 
 @purchase_order_bp.post("/<po_id>/approve")
 @api_or_login_required
+@require_capability(PAYABLES, PAYABLES_FEATURE)
 @require_permission(APPROVALS_ACT)
 def approve_purchase_order(po_id):
     """Authorize the order.
@@ -458,6 +471,7 @@ def approve_purchase_order(po_id):
 
 @purchase_order_bp.post("/<po_id>/reject")
 @api_or_login_required
+@require_capability(PAYABLES, PAYABLES_FEATURE)
 @require_permission(APPROVALS_ACT)
 def reject_purchase_order(po_id):
     """Send the order back to draft with a reason."""
@@ -479,6 +493,7 @@ def reject_purchase_order(po_id):
 
 @purchase_order_bp.post("/<po_id>/status")
 @api_or_login_required
+@require_capability(PAYABLES, PAYABLES_FEATURE)
 @require_permission(PURCHASE_ORDERS_WRITE)
 def set_status(po_id):
     """Move the order along its lifecycle: sent, received, closed, cancelled.
@@ -501,6 +516,7 @@ def set_status(po_id):
 
 @purchase_order_bp.delete("/<po_id>")
 @api_or_login_required
+@require_capability(PAYABLES, PAYABLES_FEATURE)
 @require_permission(PURCHASE_ORDERS_WRITE)
 def cancel_purchase_order(po_id):
     """Cancel an order. Deliberately not a delete.
@@ -518,6 +534,7 @@ def cancel_purchase_order(po_id):
 # ─── PDF ─────────────────────────────────────────────────────────────────────
 @purchase_order_bp.get("/<po_id>/pdf")
 @api_or_login_required
+@require_capability(PAYABLES, PAYABLES_FEATURE)
 @require_permission(PURCHASE_ORDERS_READ)
 def purchase_order_pdf(po_id):
     po = _load(po_id)
@@ -549,6 +566,7 @@ def purchase_order_pdf(po_id):
 # ─── Attachments ─────────────────────────────────────────────────────────────
 @purchase_order_bp.post("/<po_id>/attachments")
 @api_or_login_required
+@require_capability(PAYABLES, PAYABLES_FEATURE)
 @require_permission(PURCHASE_ORDERS_WRITE)
 def add_attachment(po_id):
     """Attach a quote, spec or signed copy.
@@ -613,6 +631,7 @@ def add_attachment(po_id):
 
 @purchase_order_bp.get("/<po_id>/attachments/<attachment_id>")
 @api_or_login_required
+@require_capability(PAYABLES, PAYABLES_FEATURE)
 @require_permission(PURCHASE_ORDERS_READ)
 def get_attachment(po_id, attachment_id):
     po = _load(po_id)
@@ -640,6 +659,7 @@ def get_attachment(po_id, attachment_id):
 
 @purchase_order_bp.delete("/<po_id>/attachments/<attachment_id>")
 @api_or_login_required
+@require_capability(PAYABLES, PAYABLES_FEATURE)
 @require_permission(PURCHASE_ORDERS_WRITE)
 def delete_attachment(po_id, attachment_id):
     po = _load(po_id)

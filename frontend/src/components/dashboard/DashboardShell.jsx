@@ -6,6 +6,7 @@ import {
   Building2,
   ClipboardList,
   GitCompareArrows,
+  Lock,
   CreditCard,
   Webhook,
   Settings,
@@ -18,12 +19,17 @@ import { UsageMeter } from "@/components/dashboard/UsageMeter";
 import { cn, initials } from "@/lib/utils";
 import { useAuth } from "@/lib/auth.jsx";
 
+// `capability` names a plan capability from plans.py. An item whose
+// capability the plan lacks is still SHOWN, with a lock, and still navigates —
+// the page behind it makes the case for upgrading. Hiding it would mean
+// customers never discover the module exists, which is the opposite of what a
+// paywall is for. The server refuses the data either way.
 const nav = [
   { to: "/dashboard", label: "Extract", icon: LayoutDashboard, end: true },
   { to: "/dashboard/history", label: "History", icon: History },
-  { to: "/dashboard/suppliers", label: "Suppliers", icon: Building2 },
-  { to: "/dashboard/purchase-orders", label: "Purchase orders", icon: ClipboardList },
-  { to: "/dashboard/matching", label: "Invoice matching", icon: GitCompareArrows },
+  { to: "/dashboard/suppliers", label: "Suppliers", icon: Building2, capability: "payables" },
+  { to: "/dashboard/purchase-orders", label: "Purchase orders", icon: ClipboardList, capability: "payables" },
+  { to: "/dashboard/matching", label: "Invoice matching", icon: GitCompareArrows, capability: "payables" },
   { to: "/dashboard/api", label: "API & Webhooks", icon: Webhook },
   { to: "/dashboard/billing", label: "Billing", icon: CreditCard },
   { to: "/dashboard/settings", label: "Settings", icon: Settings },
@@ -31,7 +37,7 @@ const nav = [
 
 export default function DashboardShell() {
   const navigate = useNavigate();
-  const { user, plan, usage, logout } = useAuth();
+  const { user, plan, usage, logout, has } = useAuth();
   const [open, setOpen] = useState(false);
 
   function onLogout() {
@@ -62,7 +68,10 @@ export default function DashboardShell() {
             }
           >
             <item.icon size={18} />
-            {item.label}
+            <span className="flex-1">{item.label}</span>
+            {item.capability && !has(item.capability) && (
+              <Lock size={13} className="shrink-0 text-slate-600" />
+            )}
           </NavLink>
         ))}
       </nav>

@@ -6,6 +6,12 @@ import {
 import { api, apiError } from "@/lib/api";
 import { Button } from "@/components/ui/Button";
 import { cn } from "@/lib/utils";
+import { useAuth } from "@/lib/auth.jsx";
+import {
+  PAYABLES,
+  PAYABLES_COPY,
+  UpgradePanel,
+} from "@/components/dashboard/UpgradePanel";
 
 /**
  * Suppliers.
@@ -15,6 +21,7 @@ import { cn } from "@/lib/utils";
  * supplier before their first invoice arrives.
  */
 export default function Suppliers() {
+  const { has } = useAuth();
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState("active");
   const [page, setPage] = useState(1);
@@ -23,7 +30,14 @@ export default function Suppliers() {
   const [duplicates, setDuplicates] = useState([]);
   const [creating, setCreating] = useState(false);
 
+  // A locked plan gets the upgrade panel below instead of the list, so
+  // nothing here should go to the server: every payables endpoint would
+  // answer 402. Short-circuited inside the loaders rather than before the
+  // hooks, because skipping a hook would change the hook order.
+  const locked = !has(PAYABLES);
+
   const load = useCallback(() => {
+    if (locked) return undefined;
     let active = true;
     setLoading(true);
     const params = new URLSearchParams({ status, page: String(page), perPage: "25" });
@@ -36,7 +50,7 @@ export default function Suppliers() {
     return () => {
       active = false;
     };
-  }, [query, status, page]);
+  }, [query, status, page, locked]);
 
   useEffect(() => {
     const timer = setTimeout(load, 250);   // debounce typing in the search box
@@ -44,14 +58,20 @@ export default function Suppliers() {
   }, [load]);
 
   useEffect(() => {
+    if (locked) return;
     api
       .get("/api/suppliers/duplicates")
       .then(({ data: body }) => setDuplicates(body.duplicates ?? []))
       .catch(() => setDuplicates([]));
-  }, []);
+  }, [locked]);
 
   const rows = data?.suppliers ?? [];
   const pages = data?.pages ?? 1;
+
+  // Rendered instead of the list. An early return of JSX below every
+  // hook, so the hook order never changes.
+  if (locked)
+    return <UpgradePanel {...PAYABLES_COPY.suppliers} icon={Building2} />;
 
   return (
     <div className="space-y-6">

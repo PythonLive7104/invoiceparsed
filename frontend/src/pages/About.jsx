@@ -37,6 +37,10 @@ export default function About() {
             layouts, so extraction works across formats and even on scans and
             photos. Every field comes back with a confidence score, and you can
             export to JSON or CSV or push data through our REST API and webhooks.
+            From there, Pro plans carry the document through the rest of the job:
+            supplier records, purchase orders with approval, and automatic
+            matching that checks each invoice against what you agreed to buy
+            before anyone pays it.
           </p>
           <h2 className="text-xl font-semibold text-white">Who it's for</h2>
           <p>

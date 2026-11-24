@@ -14,6 +14,7 @@ from flask import Blueprint, jsonify, request
 from auth import api_or_login_required
 from extensions import db
 from models import Extraction, Supplier
+from plans import PAYABLES, PAYABLES_FEATURE
 from roles import (
     SUPPLIER_BANK_READ,
     SUPPLIERS_READ,
@@ -24,7 +25,13 @@ from suppliers import (
     possible_duplicate_suppliers,
     supplier_stats,
 )
-from tenancy import current_organization, has_permission, require_permission, scoped
+from tenancy import (
+    current_organization,
+    has_permission,
+    require_capability,
+    require_permission,
+    scoped,
+)
 
 supplier_bp = Blueprint("suppliers", __name__, url_prefix="/api/suppliers")
 logger = logging.getLogger(__name__)
@@ -111,6 +118,7 @@ def _validate(data, supplier) -> dict:
 
 @supplier_bp.get("")
 @api_or_login_required
+@require_capability(PAYABLES, PAYABLES_FEATURE)
 @require_permission(SUPPLIERS_READ)
 def list_suppliers():
     query = scoped(Supplier)
@@ -173,6 +181,7 @@ def list_suppliers():
 
 @supplier_bp.post("")
 @api_or_login_required
+@require_capability(PAYABLES, PAYABLES_FEATURE)
 @require_permission(SUPPLIERS_WRITE)
 def create_supplier():
     data = request.get_json(silent=True) or {}
@@ -197,6 +206,7 @@ def create_supplier():
 
 @supplier_bp.get("/duplicates")
 @api_or_login_required
+@require_capability(PAYABLES, PAYABLES_FEATURE)
 @require_permission(SUPPLIERS_READ)
 def duplicate_suppliers():
     """Suppliers that may be the same business recorded twice."""
@@ -206,6 +216,7 @@ def duplicate_suppliers():
 
 @supplier_bp.get("/<sid>")
 @api_or_login_required
+@require_capability(PAYABLES, PAYABLES_FEATURE)
 @require_permission(SUPPLIERS_READ)
 def get_supplier(sid):
     supplier = scoped(Supplier).filter(Supplier.id == sid).first()
@@ -220,6 +231,7 @@ def get_supplier(sid):
 
 @supplier_bp.get("/<sid>/invoices")
 @api_or_login_required
+@require_capability(PAYABLES, PAYABLES_FEATURE)
 @require_permission(SUPPLIERS_READ)
 def supplier_invoices(sid):
     supplier = scoped(Supplier).filter(Supplier.id == sid).first()
@@ -241,6 +253,7 @@ def supplier_invoices(sid):
 
 @supplier_bp.patch("/<sid>")
 @api_or_login_required
+@require_capability(PAYABLES, PAYABLES_FEATURE)
 @require_permission(SUPPLIERS_WRITE)
 def update_supplier(sid):
     supplier = scoped(Supplier).filter(Supplier.id == sid).first()
@@ -291,6 +304,7 @@ def _apply_bank(supplier, data) -> dict:
 
 @supplier_bp.delete("/<sid>")
 @api_or_login_required
+@require_capability(PAYABLES, PAYABLES_FEATURE)
 @require_permission(SUPPLIERS_WRITE)
 def archive_supplier(sid):
     """Archive a supplier. Deliberately not a delete.

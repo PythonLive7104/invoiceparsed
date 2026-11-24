@@ -12,6 +12,8 @@ import {
   Clock,
   Receipt,
   ArrowRight,
+  ClipboardList,
+  GitCompareArrows,
   User,
   Building2,
 } from "lucide-react";
@@ -25,14 +27,24 @@ import { SEO } from "@/components/seo/SEO";
 import { FaqSection } from "@/components/seo/FaqSection";
 import { SITE_FAQS } from "@/content/registry";
 import { PAGE_META } from "@/content/pages";
-import { ANSWER, AUDIENCES, FEATURES, STATS, STEPS } from "@/content/home";
+import {
+  ANSWER,
+  AUDIENCES,
+  FEATURES,
+  PAYABLES_SECTION,
+  STATS,
+  STEPS,
+} from "@/content/home";
 import { PLANS, plansForSegment } from "@/lib/plans";
 import { cn } from "@/lib/utils";
 
 // Homepage copy is the single source of truth in src/content/home.js (shared
 // with the build-time prerenderer). It references icons by name; map them to
 // lucide components here.
-const ICONS = { Upload, ScanLine, FileJson, Gauge, Clock, ShieldCheck, Layers, User, Building2 };
+const ICONS = {
+  Upload, ScanLine, FileJson, Gauge, Clock, ShieldCheck, Layers, User,
+  Building2, ClipboardList, GitCompareArrows,
+};
 const audiences = AUDIENCES;
 const features = FEATURES;
 const steps = STEPS;
@@ -75,8 +87,8 @@ export default function Landing() {
               Built to kill manual data entry
             </h2>
             <p className="mt-4 text-lg text-slate-400">
-              InvoiceParsed does one thing exceptionally well: it reads invoices and hands you clean,
-              structured data.
+              InvoiceParsed reads your invoices accurately, then checks them against
+              what you actually agreed to buy.
             </p>
           </Reveal>
 
@@ -96,6 +108,51 @@ export default function Landing() {
               );
             })}
           </div>
+        </div>
+      </section>
+
+      {/* Accounts payable (Pro). Placed after the extraction features and
+          before the audience split, so the page reads: what it does → what
+          happens next → who that is for. */}
+      <section id="payables" className="relative border-y border-white/[0.06] bg-white/[0.015] py-24 sm:py-32">
+        <div className="container-page">
+          <Reveal className="mx-auto max-w-2xl text-center">
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-brand-400/25 bg-brand-500/10 px-3 py-1 text-xs font-semibold text-brand-300">
+              {PAYABLES_SECTION.eyebrow}
+            </span>
+            <h2 className="mt-4 text-balance text-4xl font-semibold tracking-tight text-white sm:text-5xl">
+              {PAYABLES_SECTION.title}
+            </h2>
+            <p className="mt-4 text-lg text-slate-400">{PAYABLES_SECTION.blurb}</p>
+          </Reveal>
+
+          <div className="mt-16 grid gap-5 sm:grid-cols-2">
+            {PAYABLES_SECTION.features.map((f, i) => {
+              const Icon = ICONS[f.icon];
+              return (
+                <Reveal key={f.title} delay={i * 0.05}>
+                  <div className="group glass h-full rounded-2xl p-6 transition-all duration-300 hover:-translate-y-1 hover:border-brand-400/30 sm:p-7">
+                    <div className="grid h-11 w-11 place-items-center rounded-xl bg-brand-500/10 text-brand-300 ring-1 ring-inset ring-brand-400/20 transition-colors group-hover:bg-brand-500/20">
+                      <Icon size={20} />
+                    </div>
+                    <h3 className="mt-5 text-lg font-semibold text-white">{f.title}</h3>
+                    <p className="mt-2 text-sm leading-relaxed text-slate-400">{f.desc}</p>
+                  </div>
+                </Reveal>
+              );
+            })}
+          </div>
+
+          <Reveal className="mt-12 text-center">
+            <Button to="/signup" size="lg" className="group">
+              Start free
+              <ArrowRight size={18} className="transition-transform group-hover:translate-x-0.5" />
+            </Button>
+            <p className="mt-3 text-sm text-slate-500">
+              Extraction is free on every plan. Suppliers, purchase orders and
+              invoice matching are included from Pro.
+            </p>
+          </Reveal>
         </div>
       </section>
 
@@ -154,12 +211,12 @@ export default function Landing() {
           <Reveal className="mx-auto max-w-2xl text-center">
             <span className="text-sm font-semibold text-brand-400">How it works</span>
             <h2 className="mt-3 text-balance text-4xl font-semibold tracking-tight text-white sm:text-5xl">
-              From file to data in three steps
+              From file to data in {steps.length} steps
             </h2>
           </Reveal>
 
-          <div className="relative mt-16 grid gap-6 md:grid-cols-3">
-            <div className="pointer-events-none absolute left-0 right-0 top-12 hidden h-px bg-gradient-to-r from-transparent via-brand-500/40 to-transparent md:block" />
+          <div className="relative mt-16 grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="pointer-events-none absolute left-0 right-0 top-12 hidden h-px bg-gradient-to-r from-transparent via-brand-500/40 to-transparent lg:block" />
             {steps.map((s, i) => {
               const Icon = ICONS[s.icon];
               return (

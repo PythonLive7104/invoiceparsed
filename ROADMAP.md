@@ -516,6 +516,46 @@ about duplicates, and can track processing history.
 
 All of Phase 2 depends on **F3**.
 
+**Phase 2 is a paid capability: `plans.PAYABLES`, Pro ($49) and above.**
+One flag covers suppliers, purchase orders and matching rather than three,
+because they are not separable — a purchase order is worthless without a
+supplier to order from, and matching is worthless without orders to match
+against, so selling them apart would mean selling two thirds of a workflow.
+
+Enforced by `tenancy.require_capability`, applied to **every** route in the
+three blueprints (33 of them). A per-view decorator rather than a blueprint
+`before_request` hook, because the hook runs before the auth decorator has
+resolved the organization and would therefore see the free-plan default and
+gate everybody. `tests/test_payables_plan.py` walks the live URL map and
+asserts every payables route answers 402 below Pro, so an endpoint added later
+without the decorator fails a test rather than shipping free.
+
+A capability (402, "upgrade") and a permission (403, "ask an administrator")
+are kept distinct, and both can apply to one request. The plan is reported
+first, because it is the answer the customer can act on: an administrator
+cannot grant a capability the organization has not bought.
+
+Matching is also skipped in the **upload** path below Pro — creating a match a
+customer cannot open, when every matching endpoint would answer 402, is worse
+than not matching at all. Downgrading **hides** the panel and does not delete
+the matches behind it: the work an organization did on Pro is still theirs and
+is waiting intact if they come back.
+
+The client never derives any of this from a copy of the plan table. The server
+sends the capability list on every `/api/auth/me`, and `has()` in `auth.jsx`
+reads it, alongside the existing `can()` for permissions. The payables nav
+items stay **visible** with a lock below Pro rather than being hidden — hiding
+them would mean customers never discover the module exists, which is the
+opposite of what a paywall is for — and the page behind each one makes the
+case for upgrading instead of firing requests that 402.
+
+`frontend/src/lib/plans.js` is a hand-kept mirror of `plans.py`, because the
+pricing page is prerendered at build time and cannot ask the server. Nothing
+is enforced from it, and a test asserts the two tables agree on every plan's
+price, capability flags and feature strings — a pricing page promising a
+capability the backend does not grant is a support ticket, and one hiding a
+capability is lost revenue.
+
 - **[x] P2.1 Supplier management** — done. Records create themselves: an
   uploaded invoice is attached to its supplier, creating one if the vendor is
   new. Matching is by tax ID first (government-issued and exact, so it outranks

@@ -20,7 +20,15 @@ import { fileURLToPath } from "node:url";
 
 import { SITE, absoluteUrl, clamp } from "../src/content/site.js";
 import { PAGE_META } from "../src/content/pages.js";
-import { HERO, ANSWER, STATS, FEATURES, STEPS, AUDIENCES } from "../src/content/home.js";
+import {
+  HERO,
+  ANSWER,
+  STATS,
+  FEATURES,
+  PAYABLES_SECTION,
+  STEPS,
+  AUDIENCES,
+} from "../src/content/home.js";
 import { PLANS, PLAN_ORDER } from "../src/lib/plans.js";
 import {
   BLOG_POSTS,
@@ -86,7 +94,8 @@ function pricingHtml() {
   );
 }
 
-/** Full crawler-visible homepage body (hero, answer, features, steps, FAQ). */
+/** Full crawler-visible homepage body (hero, answer, features, payables,
+ *  steps, audiences, pricing, FAQ). */
 function homeBodyHtml() {
   const title = HERO.title.lead + HERO.title.highlight + HERO.title.tail;
   const stats = `<ul>${STATS.map(([v, l]) => `<li><strong>${esc(v)}</strong> — ${esc(l)}</li>`).join("")}</ul>`;
@@ -94,8 +103,18 @@ function homeBodyHtml() {
     `<section><h2>Built to kill manual data entry</h2>` +
     FEATURES.map((f) => `<div><h3>${esc(f.title)}</h3><p>${esc(f.desc)}</p></div>`).join("") +
     `</section>`;
+  const payables =
+    `<section><h2>${esc(PAYABLES_SECTION.title)}</h2>` +
+    `<p>${esc(PAYABLES_SECTION.blurb)}</p>` +
+    PAYABLES_SECTION.features
+      .map((f) => `<div><h3>${esc(f.title)}</h3><p>${esc(f.desc)}</p></div>`)
+      .join("") +
+    `</section>`;
+  // Step count comes from the data: the heading said "three steps" while
+  // STEPS had four, and a static page that contradicts itself is worse than
+  // one that says nothing.
   const steps =
-    `<section><h2>From file to data in three steps</h2>` +
+    `<section><h2>From file to data in ${STEPS.length} steps</h2>` +
     STEPS.map((s, i) => `<div><h3>Step ${i + 1}: ${esc(s.title)}</h3><p>${esc(s.desc)}</p></div>`).join("") +
     `</section>`;
   const audiences =
@@ -110,7 +129,8 @@ function homeBodyHtml() {
     `<p>${esc(HERO.subhead)}</p>` +
     `<p><a href="${HERO.primaryCta.to}">${esc(HERO.primaryCta.label)}</a></p></header>` +
     `<p>${esc(ANSWER)}</p>` +
-    stats + features + steps + audiences + pricingHtml() + faqHtml(SITE_FAQS)
+    stats + features + payables + steps + audiences + pricingHtml() +
+    faqHtml(SITE_FAQS)
   );
 }
 

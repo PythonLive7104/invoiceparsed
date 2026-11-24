@@ -33,7 +33,7 @@ from models import (
 )
 from money import as_json, to_decimal
 from openai_service import extract_document
-from plans import plan_allows
+from plans import PAYABLES, plan_allows
 from po_matching import auto_match, evaluate
 from roles import DOCUMENTS_EXPORT, DOCUMENTS_WRITE
 from suppliers import attach_to_invoice
@@ -218,6 +218,13 @@ def _po_match_for(row, data) -> dict | None:
     orders at all: a product being used only for extraction should not start
     reporting "no PO reference" exceptions on every document.
     """
+    # The plan first. Matching is a Pro capability, and an organization below
+    # it must not be shown findings it has no way to act on - every matching
+    # endpoint would answer 402. A plan that lapses hides the panel rather
+    # than deleting the matches behind it.
+    organization = current_organization()
+    if organization is None or not plan_allows(organization.plan, PAYABLES):
+        return None
     has_orders = (
         db.session.query(PurchaseOrder.id)
         .filter(PurchaseOrder.organization_id == row.organization_id)
@@ -430,8 +437,9 @@ def extract():
     # has already paid to process this document, and a matching failure must
     # not be what loses it.
     try:
-        auto_match(record, document)
-        db.session.commit()
+        if plan_allows(organization.plan, PAYABLES):
+            auto_match(record, document)
+            db.session.commit()
     except Exception:
         db.session.rollback()
         current_app.logger.exception(
