@@ -8,6 +8,8 @@ import { api, apiError, downloadFile } from "@/lib/api";
 import { Button } from "@/components/ui/Button";
 import { PoStatusBadge, poStatusLabel } from "@/components/dashboard/PoStatus";
 import { MatchOutcomeBadge } from "@/components/dashboard/MatchStatus";
+import { Deliveries } from "@/components/dashboard/Deliveries";
+import { ApprovalChain } from "@/components/dashboard/ApprovalStatus";
 import { cn, formatBytes, formatDate, formatMoney, numericInput } from "@/lib/utils";
 import { useAuth } from "@/lib/auth.jsx";
 import { PERMISSIONS } from "@/lib/permissions";
@@ -52,6 +54,7 @@ export default function PurchaseOrderDetail() {
   const canWrite = can(PERMISSIONS.purchaseOrdersWrite);
   const canApprove = can(PERMISSIONS.approvalsAct);
   const [po, setPo] = useState(null);
+  const [approval, setApproval] = useState(null);
   const [error, setError] = useState(null);
   const [notFound, setNotFound] = useState(false);
   const [busy, setBusy] = useState(null);
@@ -63,6 +66,7 @@ export default function PurchaseOrderDetail() {
     try {
       const { data } = await api.get(`/api/purchase-orders/${id}`);
       setPo(data.purchaseOrder);
+      setApproval(data.approval ?? null);
     } catch {
       setNotFound(true);
     }
@@ -118,6 +122,7 @@ export default function PurchaseOrderDetail() {
         })),
       });
       setPo(data.purchaseOrder);
+      setApproval(data.approval ?? null);
     } catch (err) {
       setFieldErrors(err?.response?.data?.fields ?? {});
       setError(apiError(err, "Couldn't save those changes."));
@@ -132,6 +137,7 @@ export default function PurchaseOrderDetail() {
     try {
       const { data } = await api.post(`/api/purchase-orders/${id}/${action}`, body);
       setPo(data.purchaseOrder);
+      setApproval(data.approval ?? null);
       setRejecting(false);
     } catch (err) {
       setError(apiError(err, "That didn't work."));
@@ -146,6 +152,7 @@ export default function PurchaseOrderDetail() {
     try {
       const { data } = await api.post(`/api/purchase-orders/${id}/status`, { status });
       setPo(data.purchaseOrder);
+      setApproval(data.approval ?? null);
     } catch (err) {
       setError(apiError(err, "That didn't work."));
     } finally {
@@ -158,6 +165,7 @@ export default function PurchaseOrderDetail() {
     try {
       const { data } = await api.delete(`/api/purchase-orders/${id}`);
       setPo(data.purchaseOrder);
+      setApproval(data.approval ?? null);
     } catch (err) {
       setError(apiError(err, "Couldn't cancel that order."));
     } finally {
@@ -486,6 +494,41 @@ export default function PurchaseOrderDetail() {
           </div>
         )}
       </div>
+
+      {/* Above the invoices, because the goods are the evidence those
+          invoices are checked against, and reading downward follows the
+          order of events: ordered, delivered, billed. */}
+      {/* Above deliveries: whether this order is authorized at all comes
+          before what arrived against it. */}
+      {approval && (
+        <div className="glass rounded-2xl p-5 sm:p-6">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <h2 className="text-base font-semibold text-white">Approval</h2>
+              <span className="text-xs text-slate-500">{approval.ruleName}</span>
+            </div>
+            <Link
+              to="/dashboard/approvals"
+              className="text-sm text-indigo-300 hover:text-indigo-200"
+            >
+              Open approvals →
+            </Link>
+          </div>
+          {approval.stuck && (
+            <p className="mt-3 rounded-lg border border-rose-400/25 bg-rose-500/10 px-3 py-2 text-xs text-rose-100">
+              Nobody is able to act on this — the approvers at this level have
+              all left or no longer hold the role.
+            </p>
+          )}
+          <ApprovalChain
+            steps={approval.steps}
+            currentLevel={approval.currentLevel}
+            className="mt-4"
+          />
+        </div>
+      )}
+
+      <Deliveries po={po} onChanged={load} />
 
       <InvoicesAgainst poId={po.id} />
 

@@ -33,6 +33,9 @@ const Suppliers = lazy(() => import("@/pages/Suppliers.jsx"));
 const PurchaseOrders = lazy(() => import("@/pages/PurchaseOrders.jsx"));
 const PurchaseOrderDetail = lazy(() => import("@/pages/PurchaseOrderDetail.jsx"));
 const InvoiceMatching = lazy(() => import("@/pages/InvoiceMatching.jsx"));
+const Approvals = lazy(() => import("@/pages/Approvals.jsx"));
+const Payables = lazy(() => import("@/pages/Payables.jsx"));
+const Reconciliation = lazy(() => import("@/pages/Reconciliation.jsx"));
 const SupplierDetail = lazy(() => import("@/pages/SupplierDetail.jsx"));
 const Billing = lazy(() => import("@/pages/Billing.jsx"));
 const CheckoutReturn = lazy(() => import("@/pages/CheckoutReturn.jsx"));
@@ -130,6 +133,9 @@ export default function App() {
             <Route path="purchase-orders" element={<PurchaseOrders />} />
             <Route path="purchase-orders/:id" element={<PurchaseOrderDetail />} />
             <Route path="matching" element={<InvoiceMatching />} />
+            <Route path="approvals" element={<Approvals />} />
+            <Route path="payables" element={<Payables />} />
+            <Route path="reconciliation" element={<Reconciliation />} />
             <Route path="api" element={<ApiSettings />} />
             <Route path="billing" element={<Billing />} />
             <Route path="billing/return" element={<CheckoutReturn />} />

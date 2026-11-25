@@ -91,6 +91,39 @@ export const PAYABLES_COPY = {
       "A downloadable PDF that marks anything unapproved as not an authorization",
     ],
   },
+  approvals: {
+    title: "Approval workflows are a Pro feature",
+    blurb:
+      "Decide who signs off what, by amount, department, supplier or project — and have the system route it there.",
+    points: [
+      "Rules by amount, department, cost centre, project, category or supplier",
+      "Multi-level chains, with approvers at a level asked in parallel",
+      "Delegation for holidays, with both names kept on every decision",
+      "Questions, reminders and a full history of who decided what, and when",
+    ],
+  },
+  payables: {
+    title: "Payment tracking is a Pro feature",
+    blurb:
+      "What you owe, what you have paid, and what is late — without a spreadsheet.",
+    points: [
+      "Unpaid, partly paid, paid, overdue and disputed, kept up to date",
+      "Outstanding totalled per currency, never summed across them",
+      "Payments voided rather than deleted, so corrections stay on the record",
+      "InvoiceParsed records payments — it never makes them",
+    ],
+  },
+  reconciliation: {
+    title: "Bank reconciliation is a Pro feature",
+    blurb:
+      "Check that the money you think you paid actually left the account, once, for the right amount.",
+    points: [
+      "Import a CSV or Excel statement, or reuse one you already extracted",
+      "Matched on reference, amount and date, with the rest suggested",
+      "Importing the same statement twice is counted, not duplicated",
+      "Bank charges set aside with a reason, so unmatched stays a short list",
+    ],
+  },
   matching: {
     title: "Invoice matching is a Pro feature",
     blurb:

@@ -22,10 +22,15 @@ export const PERMISSIONS = {
   purchaseOrdersRead: "purchase_orders:read",
   purchaseOrdersWrite: "purchase_orders:write",
 
+  goodsReceiptsRead: "goods_receipts:read",
+  goodsReceiptsWrite: "goods_receipts:write",
+
+  approvalsRead: "approvals:read",
   approvalsAct: "approvals:act",
 
   paymentsRead: "payments:read",
   paymentsWrite: "payments:write",
+  reconciliation: "reconciliation:write",
 
   membersManage: "members:manage",
   billingManage: "billing:manage",

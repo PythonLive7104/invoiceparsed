@@ -1,10 +1,18 @@
 """Invoice-to-purchase-order matching.
 
 The control this module implements is the oldest one in accounts payable: do
-not pay for something nobody ordered, and do not pay more than was agreed. It
-answers three questions about an incoming invoice — which order is this
-against, do the figures agree with that order, and is anything here serious
-enough that it must not be paid until a person says so.
+not pay for something nobody ordered, do not pay more than was agreed, and do
+not pay for anything that never arrived. It answers three questions about an
+incoming invoice — which order is this against, do the figures agree with that
+order and with what was actually delivered, and is anything here serious enough
+that it must not be paid until a person says so.
+
+The third of those is **three-way matching** (P2.4): order, goods receipt and
+invoice compared together. It switches itself on the first time an organization
+posts a goods receipt, rather than from a setting somebody has to find. Without
+that condition it would have to be either off by default — a control nobody
+turns on — or on by default, which would block every invoice in every
+organization that does not record deliveries.
 
 Four rules shape everything below.
 
@@ -43,7 +51,14 @@ from decimal import Decimal
 from documents import load_document
 from duplicates import normalize_number
 from extensions import db
-from models import Extraction, InvoiceMatch, MatchingSettings, PurchaseOrder
+from goods_receipts import received_against
+from models import (
+    Extraction,
+    GoodsReceipt,
+    InvoiceMatch,
+    MatchingSettings,
+    PurchaseOrder,
+)
 from money import as_json, money, money_sum, rate, to_decimal
 
 # ─── Severity ────────────────────────────────────────────────────────────────
@@ -445,6 +460,102 @@ def find_candidates(organization_id: str, document: dict, *,
     return found[:limit]
 
 
+# ─── Three-way matching ──────────────────────────────────────────────────────
+def organization_uses_receipts(organization_id: str) -> bool:
+    """Has this organization ever posted a goods receipt?
+
+    What switches three-way matching on. Scoped to the organization rather
+    than the single order, because the question is "do these people record
+    deliveries" — if they do, an order with no receipt against it is a finding
+    rather than a silence.
+
+    Tested on `posted_at`, not on the current status, so the answer is "have
+    you ever completed one" rather than "do you have one right now". Two
+    consequences, both wanted: cancelling the last receipt does not quietly
+    switch the control off — which would also make cancelling everything a way
+    to disable it — and a draft somebody is halfway through typing does not
+    switch it on.
+
+    A cheap EXISTS, and it runs once per comparison.
+    """
+    return (
+        db.session.query(GoodsReceipt.id)
+        .filter(
+            GoodsReceipt.organization_id == organization_id,
+            GoodsReceipt.posted_at.isnot(None),
+        )
+        .first()
+    ) is not None
+
+
+def _receipt_findings(po, pairs, *, settings, delivery, uses_receipts) -> list[dict]:
+    """Compare what is being invoiced against what was accepted.
+
+    Measured against ACCEPTED, never against received: goods that arrived
+    damaged or were sent back are not owed for, and an invoice that bills them
+    is over-invoicing even though the lorry did turn up.
+    """
+    if not uses_receipts or not settings.require_goods_receipt:
+        return []
+
+    findings = []
+    accepted_by_line = delivery["accepted"]
+
+    if delivery["receiptCount"] == 0:
+        # They record deliveries, and there is no record of one here.
+        return [_finding(
+            "invoice_before_goods", BLOCKING,
+            f"Nothing has been recorded as received against order "
+            f"{po.po_number}. Record the delivery, or accept this invoice "
+            "explicitly if it is being paid in advance.",
+            field="line_items",
+        )]
+
+    for pair in pairs:
+        po_line = pair["poLine"]
+        if po_line is None:
+            continue
+        invoice_qty = rate(pair["invoiceLine"].get("quantity"))
+        if invoice_qty is None or invoice_qty <= 0:
+            continue
+        accepted = accepted_by_line.get(po_line.id, ZERO)
+        line_no = pair["index"] + 1
+        label = (pair["invoiceLine"].get("description") or "").strip()[:60] \
+            or f"line {line_no}"
+
+        if accepted <= 0:
+            findings.append(_finding(
+                "line_not_received", BLOCKING,
+                f"{label}: invoiced for {_qty(invoice_qty)}, but none of this "
+                "line has been accepted as delivered.",
+                field="quantity", line_no=line_no,
+            ))
+            continue
+
+        if within_tolerance(
+            accepted, invoice_qty,
+            percent=settings.quantity_tolerance_percent,
+            amount=settings.quantity_tolerance_amount,
+        ) or invoice_qty <= accepted:
+            continue
+
+        received = delivery["received"].get(po_line.id, ZERO)
+        shortfall = invoice_qty - accepted
+        detail = (
+            f"{_qty(received)} arrived but only {_qty(accepted)} were accepted"
+            if received > accepted
+            else f"only {_qty(accepted)} have been accepted as delivered"
+        )
+        findings.append(_finding(
+            "line_over_receipt", BLOCKING,
+            f"{label}: invoiced for {_qty(invoice_qty)}, {detail} "
+            f"({_qty(shortfall)} not delivered).",
+            field="quantity", line_no=line_no,
+        ))
+
+    return findings
+
+
 # ─── Comparison ──────────────────────────────────────────────────────────────
 def _finding(code, severity, message, *, field=None, line_no=None) -> dict:
     return {
@@ -587,7 +698,8 @@ def _line_findings(pair, *, settings, outstanding) -> list[dict]:
     return findings
 
 
-def _line_payload(pair, *, outstanding, expected_amount) -> dict:
+def _line_payload(pair, *, outstanding, expected_amount, received=None,
+                  accepted_qty=None) -> dict:
     invoice_line = pair["invoiceLine"]
     po_line = pair["poLine"]
     data = {
@@ -613,6 +725,11 @@ def _line_payload(pair, *, outstanding, expected_amount) -> dict:
             "taxRate": as_json(po_line.tax_rate),
             "quantityOutstanding": as_json(outstanding),
             "expectedAmount": as_json(expected_amount),
+            # The delivery position for this line, so the client can show
+            # ordered / received / accepted / invoiced side by side without a
+            # second request.
+            "quantityReceived": as_json(received),
+            "quantityAccepted": as_json(accepted_qty),
         }
     return data
 
@@ -634,6 +751,9 @@ def compare(po, document: dict, *, settings=None,
     findings = _header_findings(
         po, document, settings=settings, invoice_supplier_id=invoice_supplier_id
     )
+
+    delivery = received_against(po)
+    uses_receipts = organization_uses_receipts(po.organization_id)
 
     position = invoiced_against(po, exclude_extraction_id=exclude_extraction_id)
     already_invoiced = position["total"]
@@ -670,8 +790,11 @@ def compare(po, document: dict, *, settings=None,
         expected_parts.append(expected)
         findings.extend(_line_findings(pair, settings=settings,
                                        outstanding=outstanding))
-        line_payloads.append(_line_payload(pair, outstanding=outstanding,
-                                           expected_amount=expected))
+        line_payloads.append(_line_payload(
+            pair, outstanding=outstanding, expected_amount=expected,
+            received=delivery["received"].get(po_line.id, ZERO),
+            accepted_qty=delivery["accepted"].get(po_line.id, ZERO),
+        ))
 
     expected_total = money_sum(expected_parts)
 
@@ -738,6 +861,11 @@ def compare(po, document: dict, *, settings=None,
                 field="total",
             ))
 
+    findings.extend(_receipt_findings(
+        po, pairs, settings=settings, delivery=delivery,
+        uses_receipts=uses_receipts,
+    ))
+
     if position.get("truncated"):
         findings.append(_finding(
             "too_many_invoices", REVIEW,
@@ -801,6 +929,12 @@ def compare(po, document: dict, *, settings=None,
             ),
             "expectedAtOrderPrices": as_json(expected_total),
             "otherInvoiceCount": position["invoiceCount"],
+        },
+        "delivery": {
+            # Whether three-way matching applied at all, so the client can say
+            # "not checked against deliveries" rather than implying it passed.
+            "checked": bool(uses_receipts and settings.require_goods_receipt),
+            "receiptCount": delivery["receiptCount"],
         },
     }
 

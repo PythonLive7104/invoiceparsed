@@ -26,10 +26,17 @@ from flask import Blueprint, current_app, g, jsonify, request, send_file
 from sqlalchemy.exc import IntegrityError
 from werkzeug.utils import secure_filename
 
+from approvals import open_request_for
 from auth import api_or_login_required
 from config import Config
 from extensions import db
-from models import PurchaseOrder, PurchaseOrderAttachment, Supplier, User
+from models import (
+    ApprovalRule,
+    PurchaseOrder,
+    PurchaseOrderAttachment,
+    Supplier,
+    User,
+)
 from money import as_json
 from plans import PAYABLES, PAYABLES_FEATURE
 from purchase_orders import (
@@ -110,9 +117,27 @@ def _user_label(user_id: str | None) -> dict | None:
     return {"id": user.id, "name": user.name, "email": user.email}
 
 
+def _approval_of(po: PurchaseOrder):
+    """The live approval chain for this order, if any.
+
+    Never fatal: a workflow that cannot be read must not stop an order being
+    looked at.
+    """
+    try:
+        from routes.approval_routes import open_request_payload
+
+        return open_request_payload(
+            po.organization_id, ApprovalRule.PURCHASE_ORDER, po.id
+        )
+    except Exception:
+        logger.exception("could not read the approval for PO %s", po.id)
+        return None
+
+
 def _detail(po: PurchaseOrder):
     supplier = Supplier.query.get(po.supplier_id) if po.supplier_id else None
     return jsonify({
+        "approval": _approval_of(po),
         "purchaseOrder": po.public(
             # Payment details are deliberately absent: a PO is about what was
             # ordered, and bank details are gated behind suppliers:bank:read on
@@ -445,11 +470,35 @@ def _transition_response(po: PurchaseOrder, status: str, *, reason=None):
 @require_capability(PAYABLES, PAYABLES_FEATURE)
 @require_permission(PURCHASE_ORDERS_WRITE)
 def submit_purchase_order(po_id):
-    """Send a draft for approval."""
+    """Send a draft for approval.
+
+    Where an approval rule matches, this also builds the chain it specifies.
+    Where none does, the order keeps the single-approval behaviour it had
+    before P2.5 — which is what makes workflows additive rather than something
+    every existing customer has to configure before they can order anything.
+    """
     po = _load(po_id)
     if po is None:
         return jsonify({"error": "Purchase order not found."}), 404
-    return _transition_response(po, PurchaseOrder.PENDING_APPROVAL)
+
+    response = _transition_response(po, PurchaseOrder.PENDING_APPROVAL)
+    status = response[1] if isinstance(response, tuple) else 200
+    if status != 200:
+        return response
+
+    from routes.approval_routes import request_for_purchase_order
+
+    try:
+        if request_for_purchase_order(po, g.user.id) is not None:
+            db.session.commit()
+            return _detail(po)
+        db.session.rollback()
+    except Exception:
+        # The order IS submitted; losing it over workflow bookkeeping would
+        # be a worse outcome than falling back to single approval.
+        db.session.rollback()
+        logger.exception("could not build an approval chain for PO %s", po.id)
+    return response
 
 
 @purchase_order_bp.post("/<po_id>/approve")
@@ -466,6 +515,19 @@ def approve_purchase_order(po_id):
     po = _load(po_id)
     if po is None:
         return jsonify({"error": "Purchase order not found."}), 404
+
+    # A live approval chain owns this decision. Approving the order directly
+    # while people are partway through signing it would make the chain a
+    # decoration, and the audit trail a fiction.
+    live = open_request_for(po.organization_id, ApprovalRule.PURCHASE_ORDER, po.id)
+    if live is not None:
+        return jsonify({
+            "error": (f"This order is in an approval workflow "
+                      f"('{live.rule_name}'). Record your decision there."),
+            "code": "IN_WORKFLOW",
+            "approvalRequestId": live.id,
+        }), 409
+
     return _transition_response(po, PurchaseOrder.APPROVED)
 
 
@@ -478,6 +540,15 @@ def reject_purchase_order(po_id):
     po = _load(po_id)
     if po is None:
         return jsonify({"error": "Purchase order not found."}), 404
+
+    live = open_request_for(po.organization_id, ApprovalRule.PURCHASE_ORDER, po.id)
+    if live is not None:
+        return jsonify({
+            "error": (f"This order is in an approval workflow "
+                      f"('{live.rule_name}'). Record your decision there."),
+            "code": "IN_WORKFLOW",
+            "approvalRequestId": live.id,
+        }), 409
 
     data = request.get_json(silent=True) or {}
     reason = (data.get("reason") or "").strip()

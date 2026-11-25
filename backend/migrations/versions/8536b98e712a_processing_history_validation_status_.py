@@ -22,8 +22,26 @@ def upgrade():
     # constraint it recreates, so an unnamed one fails the whole upgrade.
     with op.batch_alter_table('extractions', schema=None) as batch_op:
         batch_op.add_column(sa.Column('validation_status', sa.String(length=30), nullable=True))
-        batch_op.add_column(sa.Column('validation_issue_count', sa.Integer(), nullable=False))
-        batch_op.add_column(sa.Column('extracted_field_count', sa.Integer(), nullable=False))
+        # server_default so this is safe on a table that already has
+        # rows: ADD COLUMN NOT NULL with no default fails outright on
+        # PostgreSQL. Added retrospectively - every database that has
+        # run this migration is already past it, and every one that has
+        # not reaches it with the table still empty, so this changes no
+        # existing installation. It stops the next fresh deploy on a
+        # restored dump from being the one that finds out.
+        batch_op.add_column(sa.Column(
+            'validation_issue_count', sa.Integer(), nullable=False, server_default='0',
+        ))
+        # server_default so this is safe on a table that already has
+        # rows: ADD COLUMN NOT NULL with no default fails outright on
+        # PostgreSQL. Added retrospectively - every database that has
+        # run this migration is already past it, and every one that has
+        # not reaches it with the table still empty, so this changes no
+        # existing installation. It stops the next fresh deploy on a
+        # restored dump from being the one that finds out.
+        batch_op.add_column(sa.Column(
+            'extracted_field_count', sa.Integer(), nullable=False, server_default='0',
+        ))
         batch_op.add_column(sa.Column('processing_ms', sa.Integer(), nullable=True))
         batch_op.add_column(sa.Column('error_message', sa.String(length=500), nullable=True))
         batch_op.add_column(sa.Column('reviewed_at', sa.DateTime(), nullable=True))

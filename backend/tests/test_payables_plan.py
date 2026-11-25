@@ -24,7 +24,17 @@ from tests.conftest import auth_header, make_user, org_header
 # asserts this list IS the set of routes the three blueprints expose — so a new
 # endpoint added without a paywall fails a test rather than quietly becoming
 # free.
-PAYABLES_PREFIXES = ("/api/suppliers", "/api/purchase-orders", "/api/matching")
+PAYABLES_PREFIXES = (
+    "/api/suppliers",
+    "/api/purchase-orders",
+    "/api/matching",
+    "/api/goods-receipts",
+    "/api/approvals",
+    # Payments TO suppliers. Distinct from /api/billing/payments, which is
+    # what a customer pays us and is emphatically not behind this paywall.
+    "/api/payments",
+    "/api/reconciliation",
+)
 
 
 @pytest.fixture
@@ -111,9 +121,11 @@ def test_no_payables_route_is_reachable_below_pro(app, client, free):
             assert body["capability"] == PAYABLES
             checked += 1
 
-    # 33 routes at the time of writing; the floor guards against the URL map
-    # coming back empty and the loop passing vacuously.
-    assert checked >= 30, checked
+    # At least one method checked per rule. Derived rather than hardcoded:
+    # a constant would still pass if an entire blueprint dropped out of
+    # PAYABLES_PREFIXES, which is exactly how the goods-receipt routes went
+    # unwalked when they were added.
+    assert checked >= len(rules), (checked, len(rules))
 
 
 def test_the_error_names_the_plan_that_includes_it(app, client, free):

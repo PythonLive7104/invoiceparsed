@@ -56,7 +56,9 @@ export default function DashboardHome() {
       <UsageStats />
 
       <div className="grid gap-6 lg:grid-cols-[1fr_300px]">
-        <div className="min-w-0">
+        {/* The setup checklist links here by fragment, so this id is part of
+            a contract with onboarding_state() in organization_routes.py. */}
+        <div id="extract" className="min-w-0 scroll-mt-6">
           <ExtractWorkspace />
         </div>
 

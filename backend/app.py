@@ -19,14 +19,18 @@ from extensions import db, limiter, migrate
 from json_provider import DecimalJSONProvider
 from plans import PLAN_ORDER, PLANS
 from routes import (
+    approval_bp,
     auth_bp,
     billing_bp,
     demo_bp,
     extract_bp,
+    goods_receipt_bp,
     keys_bp,
     match_bp,
     organization_bp,
+    payment_bp,
     purchase_order_bp,
+    reconciliation_bp,
     supplier_bp,
     support_bp,
     webhook_bp,
@@ -94,6 +98,10 @@ def create_app(config_class=Config) -> Flask:
     app.register_blueprint(supplier_bp)
     app.register_blueprint(purchase_order_bp)
     app.register_blueprint(match_bp)
+    app.register_blueprint(goods_receipt_bp)
+    app.register_blueprint(approval_bp)
+    app.register_blueprint(payment_bp)
+    app.register_blueprint(reconciliation_bp)
     app.register_blueprint(support_bp)
 
     # Flask-Admin at /admin (no-op unless ADMIN_USER/ADMIN_PASSWORD are set).

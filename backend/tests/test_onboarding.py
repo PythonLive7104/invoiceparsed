@@ -280,12 +280,48 @@ def test_every_checklist_step_links_to_a_route_the_app_defines(app, client, acco
         if not action:
             continue
         assert action.startswith("/dashboard"), step["key"]
+        path = action.split("#")[0]
         # "/dashboard/settings" is declared as a child path "settings" under
         # the dashboard route, so the tail is what appears in App.jsx.
-        tail = action[len("/dashboard"):].strip("/")
+        tail = path[len("/dashboard"):].strip("/")
         if not tail:
             continue
         assert f'path="{tail}"' in source, (step["key"], action)
+
+
+def test_a_step_pointing_at_the_page_it_is_shown_on_names_a_target_on_it(
+    app, client, account
+):
+    """The bug this guards: "Process your first document" linked to
+    /dashboard, which is the page the checklist itself is on, so clicking it
+    navigated nowhere and looked broken.
+
+    A step whose target is the current page has to name an element on it, and
+    that element has to exist — the checklist scrolls to it rather than
+    navigating. Checked here because the two halves live in different
+    languages and nothing else would notice them drifting apart.
+    """
+    _owner, headers = account
+    body = _state(client, headers)
+
+    home = _frontend("src", "pages", "DashboardHome.jsx")
+    if not home.exists():
+        pytest.skip("frontend tree not present")
+    source = home.read_text(encoding="utf-8")
+
+    checked = 0
+    for step in body["onboarding"]["steps"]:
+        action = step.get("action") or ""
+        if action.split("#")[0] != "/dashboard":
+            continue
+        assert "#" in action, (
+            f"step {step['key']} links to /dashboard, the page the checklist "
+            "is shown on, without naming anything to scroll to"
+        )
+        anchor = action.split("#", 1)[1]
+        assert f'id="{anchor}"' in source, (step["key"], anchor)
+        checked += 1
+    assert checked == 1, checked
 
 
 def test_the_business_details_step_lands_on_a_page_that_can_fill_it_in(

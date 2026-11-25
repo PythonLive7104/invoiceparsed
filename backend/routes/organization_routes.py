@@ -16,10 +16,21 @@ from flask import Blueprint, g, jsonify, request
 
 from auth import login_required
 from extensions import db
-from models import Extraction
+from models import Extraction, OrganizationMembership, User
 from plans import PLANS
-from roles import ORG_SETTINGS, permissions_for
-from tenancy import current_organization, current_role, require_permission, scoped
+from roles import (
+    APPROVALS_READ,
+    MEMBERS_READ,
+    ORG_SETTINGS,
+    permissions_for,
+)
+from tenancy import (
+    current_organization,
+    current_role,
+    has_permission,
+    require_permission,
+    scoped,
+)
 from usage import usage_for
 
 organization_bp = Blueprint("organizations", __name__, url_prefix="/api/organizations")
@@ -84,7 +95,11 @@ def onboarding_state(user, organization) -> dict:
             "first_upload", "Process your first document",
             "Drop in an invoice, receipt or bank statement.",
             uploaded > 0,
-            action="/dashboard",
+            # The fragment matters: this step is shown ON the dashboard, so a
+            # bare "/dashboard" navigates to the page the reader is already
+            # looking at and appears to do nothing. The uploader is further
+            # down, past this checklist.
+            action="/dashboard#extract",
         ),
         _step(
             "review", "Review what we extracted",
@@ -169,6 +184,43 @@ def update_current():
     return jsonify({
         "organization": organization.public(),
         "onboarding": onboarding_state(g.user, organization),
+    })
+
+
+@organization_bp.get("/current/members")
+@login_required
+@require_permission(APPROVALS_READ)
+def list_members():
+    """Who is in this organization.
+
+    Gated on `approvals:read` rather than `members:read`, which is the
+    stricter member-management permission. The distinction is deliberate:
+    knowing which colleagues exist is not sensitive — you work with them, and
+    an approval chain names them to your face. What `members:read` protects is
+    the administrative view, so **email addresses are only included for
+    callers who hold it**. Everyone else gets a name and a role, which is what
+    a delegation picker needs and no more.
+    """
+    organization = current_organization()
+    rows = (
+        db.session.query(OrganizationMembership, User)
+        .join(User, User.id == OrganizationMembership.user_id)
+        .filter(OrganizationMembership.organization_id == organization.id)
+        .order_by(User.name.asc(), User.email.asc())
+        .limit(500)
+        .all()
+    )
+    detailed = has_permission(MEMBERS_READ)
+    return jsonify({
+        "members": [
+            {
+                "userId": user.id,
+                "name": user.name or user.email,
+                "role": membership.role,
+                **({"email": user.email} if detailed else {}),
+            }
+            for membership, user in rows
+        ],
     })
 
 

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import { CheckCircle2, Circle, X, ArrowRight, Sparkles } from "lucide-react";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
@@ -14,8 +14,36 @@ import { cn } from "@/lib/utils";
  *
  * Hides itself once the required steps are complete, rather than lingering as a
  * row of ticks nobody needs.
+ *
+ * A step may point at a fragment on the page it is already on ("Process your
+ * first document" → /dashboard#extract). React Router does not scroll for a
+ * hash when the route does not change, so that link would navigate to the page
+ * the reader is looking at and appear broken. `scrollToStep` handles it.
  */
+
+/** Scroll to a step's target when it is on the current page.
+ *
+ *  Returns true when it handled the click, so the caller knows to suppress the
+ *  navigation. A missing element returns false and the Link runs normally —
+ *  better a real navigation than a click that silently does nothing, which is
+ *  the bug this exists to fix.
+ */
+function scrollToStep(action, pathname) {
+  const [path, hash] = action.split("#");
+  if (!hash || path !== pathname) return false;
+  const target = document.getElementById(hash);
+  if (!target) return false;
+  target.scrollIntoView({ behavior: "smooth", block: "start" });
+  // Move keyboard focus too, so the next Tab lands in the uploader rather than
+  // back at the top of the page.
+  const focusable = target.querySelector(
+    'input, button, [tabindex]:not([tabindex="-1"])',
+  );
+  focusable?.focus({ preventScroll: true });
+  return true;
+}
 export function SetupChecklist() {
+  const { pathname } = useLocation();
   const [state, setState] = useState(null);
   const [busy, setBusy] = useState(false);
 
@@ -115,6 +143,9 @@ export function SetupChecklist() {
               {!step.done && step.action ? (
                 <Link
                   to={step.action}
+                  onClick={(event) => {
+                    if (scrollToStep(step.action, pathname)) event.preventDefault();
+                  }}
                   className="-mx-2 block rounded-lg px-2 py-1.5 transition-colors hover:bg-white/[0.04]"
                 >
                   {body}

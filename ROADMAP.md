@@ -523,7 +523,7 @@ supplier to order from, and matching is worthless without orders to match
 against, so selling them apart would mean selling two thirds of a workflow.
 
 Enforced by `tenancy.require_capability`, applied to **every** route in the
-three blueprints (33 of them). A per-view decorator rather than a blueprint
+seven blueprints (75 of them). A per-view decorator rather than a blueprint
 `before_request` hook, because the hook runs before the auth decorator has
 resolved the organization and would therefore see the free-plan default and
 gate everybody. `tests/test_payables_plan.py` walks the live URL map and
@@ -753,26 +753,217 @@ capability is lost revenue.
   process the document, and a matching failure must not be what loses it.
 
   115 tests.
-- **[ ] P2.4 Goods received + three-way matching** — GRN records with ordered /
-  received / damaged / outstanding quantities and partial deliveries, then
-  PO + GRN + Invoice matching. Detect invoice-before-goods, over-invoicing
-  against delivery, and quantity or amount mismatches.
-- **[ ] P2.5 Approval workflows** — rules by amount, department, supplier,
-  category, project, cost centre and PO status. Single and multi-level,
-  sequential and parallel, delegation, rejection with comments, information
-  requests, reminders, full history, notifications. Configurable, not hardcoded.
-- **[ ] P2.6 Payment tracking** — invoice amount, paid, outstanding, due date,
-  status (unpaid / partially paid / paid / overdue / disputed), payment date,
-  reference, method. Manual recording. Architected for later payment
-  integrations while **initiating no payments**.
-- **[ ] P2.7 Bank reconciliation** — CSV/Excel statement import, matching by
-  exact / amount / date / reference / fuzzy description, surfacing unmatched,
-  duplicate, partial and discrepant transactions, a manual reconciliation UI,
-  fully auditable. A statement *extraction* path already exists
-  (`statement_schema.py`) and should be reused rather than duplicated.
+- **[x] P2.4 Goods received + three-way matching** — `goods_receipts.py`,
+  `routes/goods_receipt_routes.py`, `models.GoodsReceipt` /
+  `models.GoodsReceiptLine`, migration `efde7fa89eb5`. Frontend:
+  `components/dashboard/Deliveries.jsx` on the order page.
 
-**Phase 2 acceptance:** a business runs invoice → approval → payment recording,
-and reconciles payments against imported bank transactions.
+  The leg an order and an invoice cannot supply between them. Four rules.
+
+  1. **Accepted is what counts.** `accepted = received − damaged − rejected`,
+     and accepted is the only one of the four an invoice is ever measured
+     against. You do not owe a supplier for goods you refused or for goods
+     that arrived smashed, and a system that pays on "it turned up" pays for
+     broken stock. Three counts rather than one, because they have three
+     different consequences and the difference between "shipped 8" and
+     "shipped 10, 2 broken" is what decides who pays.
+  2. **Only a posted receipt counts.** A half-entered delivery note must not
+     make an invoice payable — the same rule as an unconfirmed invoice match
+     not consuming an order's value. Posting is a separate action, not a side
+     effect of saving.
+  3. **The order's totals are a cache with one writer.**
+     `recompute_received` rewrites `quantity_received` and `quantity_accepted`
+     from the posted receipts on every change. Incrementing would drift the
+     first time a receipt was cancelled, and a silently wrong "received to
+     date" is worse than no column. Same discipline as `recompute_invoiced`.
+  4. **Nothing is deleted.** A receipt is an assertion somebody made about a
+     physical event, and invoices may already have been matched against it.
+     Cancelling gives the quantities back, which can re-block an invoice that
+     was satisfied — correct, because the assertion has been withdrawn.
+
+  **Three-way matching switches itself on** the first time an organization
+  posts a receipt, rather than from a setting somebody has to find. Without
+  that condition it would have to be off by default — a control nobody turns
+  on — or on by default, which would have blocked every invoice in every
+  organization that does not record deliveries the day it shipped. The test is
+  "has this organization ever *posted* one" (`posted_at`, not current status),
+  so cancelling the last receipt cannot quietly switch the control off, and a
+  draft somebody is halfway through typing cannot switch it on.
+
+  New findings, all blocking: `invoice_before_goods` (nothing recorded against
+  the order), `line_not_received` (this line has nothing accepted),
+  `line_over_receipt` (invoiced beyond what was accepted — the message
+  distinguishes what arrived from what was accepted, which is the whole
+  point). `requireGoodsReceipt` turns them off for an organization whose
+  invoices legitimately arrive first.
+
+  **Damaged goods do not complete an order.** "Fully received" means every
+  line has at least as much *accepted* as was ordered; counting damaged stock
+  toward completion would close an order the supplier still owes against. An
+  approved order can receive without being marked sent — goods arriving is
+  proof it reached the supplier, and refusing the delivery because nobody
+  pressed "sent" would make the paperwork argue with the loading dock.
+
+  Recording a delivery is gated on `goods_receipts:write`, which accountants
+  deliberately do not hold: the person who is about to pay an invoice should
+  not also be able to assert that the goods turned up.
+
+  50 tests.
+
+  **Also fixed here:** a latent bug in migration `8536b98e712a`, which added
+  two `NOT NULL` columns to `extractions` with no `server_default`. That form
+  of `ADD COLUMN` fails outright on PostgreSQL against a table with rows. It
+  has never bitten — a fresh chain reaches it with the table empty, and every
+  existing database is already past it — but a deploy onto a restored dump
+  would have found it. `tests/test_migrations.py` now refuses the pattern, so
+  it cannot come back; the P2.4 migration was written the same way by
+  autogenerate and was caught by that test before it shipped.
+- **[x] P2.5 Approval workflows** — `approvals.py`,
+  `routes/approval_routes.py`, six models, migration `585afb383323`.
+
+  Configuration, not code. Five rules.
+
+  1. **One rule applies, not all of them.** The highest-priority match wins.
+     Combining every match produces chains nobody can predict or explain, and
+     a chain you cannot explain is one people route around. Conditions (amount
+     range, currency, department, cost centre, project, category, supplier)
+     are ANDed, and an unset condition does not constrain — so a rule with no
+     conditions means "everything", which is how most organizations start.
+  2. **The chain is materialized at submission.** Editing a rule never
+     rewrites an approval in flight: the people who signed it signed a
+     specific chain, and an audit trail that changes shape retrospectively is
+     not an audit trail. There is a test for exactly this.
+  3. **Levels are sequential; approvers within a level are not.** A director is
+     not troubled by something their manager is going to reject.
+     `requireAll` decides whether every approver at a level must sign or one
+     is enough; where one is enough the rest are marked skipped rather than
+     left in somebody's queue forever.
+  4. **You cannot approve your own submission** — with the same escape hatch
+     as the P2.2 rule, because an organization where the submitter is the only
+     possible approver needs approval to be possible rather than merely safe.
+  5. **Nothing is silently skipped.** A level whose approvers have all left
+     leaves the request `stuck: true` rather than quietly satisfied.
+
+  **An amount that cannot be read FAILS a threshold rather than passing it.**
+  An unreadable total must not slip under a limit and skip approval.
+
+  Delegation is date-bounded — an open-ended one is how a person quietly
+  acquires everybody's authority long after the holiday it was created for —
+  and is resolved **when a decision is made**, not when the chain was built,
+  because going away *after* a request was raised is the case that actually
+  happens. Both names stay on the record: "approved by Ada on behalf of Ben".
+  You may delegate your own authority; an administrator may delegate anyone's.
+  Nobody can grant themselves somebody else's signature.
+
+  Writing rules is `organization:settings`, not `approvals:act`: letting
+  approvers edit the thresholds that bind them would make the control
+  decorative. Reading them is open to anyone who can see approvals, because
+  somebody who cannot see why a thing reached them cannot judge whether it
+  should have.
+
+  **The chain cannot be bypassed.** With a workflow live, `POST /approve` and
+  `POST /reject` on the order answer 409 `IN_WORKFLOW`. With no rule matching,
+  the order keeps its pre-P2.5 single-approval behaviour exactly — which is
+  what makes workflows additive rather than something every existing customer
+  must configure before they can order anything. All 110 P2.2 tests still pass
+  untouched.
+
+  52 tests.
+- **[x] P2.6 Payment tracking** — `payments.py`, `routes/payment_routes.py`,
+  `models.SupplierPayment`, migration `1feba476d206`.
+
+  **This product initiates no payments and holds no payment credentials.**
+  Somebody pays an invoice through their bank and records here that they did.
+  That boundary is deliberate: the moment software can move money out of a
+  business it becomes the most valuable thing in the building to compromise,
+  and every control around it would have to be an order of magnitude stronger
+  than anything else here. A test asserts the module imports no HTTP client
+  and no payment provider, because "architected for later integrations" is
+  exactly how a product acquires the ability to move money without anybody
+  deciding to.
+
+  The position is **recomputed, never incremented** — the same discipline as
+  `recompute_invoiced` and `recompute_received`, and for the same reason: a
+  silently wrong "paid to date" is the figure that gets an invoice paid twice.
+  Payments are voided, never deleted.
+
+  States: unpaid, partially paid, paid, overdue, disputed. **Overdue outranks
+  partially paid** (the useful question is "what is late", not "what is
+  untouched") and **a dispute outranks everything** — an invoice somebody is
+  arguing about must not sit quietly in overdue where a payment run sweeps it
+  up. Overdue is the one state that changes without anybody touching anything,
+  so it is refreshed when the payables list is read rather than by a scheduled
+  job this deployment does not have.
+
+  An **overpayment is recorded and flagged, not refused**: refusing to record
+  money that has already left the bank account would make this ledger disagree
+  with the bank, which is worse than a flagged overpayment. Outstanding never
+  goes negative — an overpayment is a credit to chase, not a negative debt.
+
+  35 tests.
+- **[x] P2.7 Bank reconciliation** — `reconciliation.py`,
+  `routes/reconciliation_routes.py`, three models, migration `fa82bac188b1`.
+
+  Four rules.
+
+  1. **The extraction pipeline is reused, not duplicated.** A statement
+     already read by `statement_schema` imports straight from the stored
+     payload. Re-parsing the same PDF with a second parser would produce two
+     answers about one document, and they would drift.
+  2. **Importing the same statement twice is harmless.** Every line carries a
+     fingerprint, and duplicates are counted and reported rather than silently
+     dropped — "I imported 200 lines and 198 appeared" is alarming unless the
+     system says why. The fingerprint includes the row's **position**, because
+     a bank really can issue two identical lines in a day and collapsing them
+     would lose one.
+  3. **A suggestion is not a reconciliation.** The engine proposes, a person
+     confirms, and only a confirmed match reconciles anything.
+  4. **Ignoring is explicit and reasoned**, so "unmatched" stays a short list
+     of real problems rather than a wall people stop reading — and "ignored"
+     does not become a way to hide one.
+
+  CSV and Excel both go down one path: the workbook is rendered through the
+  same reader, so the two formats cannot disagree about what a statement looks
+  like. Column names are matched against the aliases banks actually use
+  ("Value Date", "Particulars", "Withdrawals"), preamble rows above the header
+  are skipped, and a single signed amount column is understood as well as
+  separate debit/credit columns. **Day-first dates are tried before
+  month-first**: a date read the wrong way round moves a transaction by months,
+  which is far worse than failing to read it.
+
+  `debit` and `credit` are stored as the statement presents them rather than
+  collapsed into a signed amount, because which column a figure sits in is the
+  bank's own assertion about direction — and **an inbound credit is never
+  matched to a payment out**, or a refund reconciles as though it were the
+  payment itself. One payment cannot reconcile two bank lines, or a duplicate
+  bank payment matches the single payment record and the duplicate disappears.
+
+  Matching is by reference (strongest: the string the payer typed, carried
+  through by the bank), then amount plus date within five days, then amount
+  with a description that shares a meaningful word, then amount alone. Bank
+  boilerplate — BACS, CHAPS, REF, LTD — is stripped before descriptions are
+  compared.
+
+  36 tests.
+
+**Phase 2 acceptance — met.** A business can run invoice → approval → payment
+recording and reconcile against an imported bank statement, through the
+product rather than through the API. The screens are
+`pages/Approvals.jsx` (queue, rule builder, delegation), `pages/Payables.jsx`
+(ledger, recording, disputes), `pages/Reconciliation.jsx` (import, match,
+set aside) and `components/dashboard/Deliveries.jsx` on the order page, with
+the live approval chain shown on the order itself.
+
+Building the engine first and the screens second was deliberate: every rule
+above is enforced server-side and tested there, and no screen re-derives a
+figure or an authority decision the server has already made. `canAct` on an
+approval, `blocked` on a match and the capability list behind every nav item
+all come from the server — the client asks, it does not conclude.
+
+A note on what the UI does NOT do: there is no bulk approve, no bulk payment
+run and no "reconcile everything that looks right". Each is a one-click way to
+wave through exactly the exceptions this phase exists to surface, and none of
+them should be added without someone deciding that deliberately.
 
 ---
 

@@ -70,6 +70,7 @@ NUMERIC_SETTINGS = {
 FLAG_SETTINGS = {
     "requirePoReference": "require_po_reference",
     "blockUnapprovedPo": "block_unapproved_po",
+    "requireGoodsReceipt": "require_goods_receipt",
     "autoConfirmExact": "auto_confirm_exact",
 }
 

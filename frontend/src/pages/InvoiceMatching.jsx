@@ -402,6 +402,11 @@ const FLAGS = [
     help: "The control that stops spend being authorized after it was incurred.",
   },
   {
+    key: "requireGoodsReceipt",
+    title: "Block invoices for goods not recorded as received",
+    help: "Three-way matching. Dormant until you post your first goods receipt, so turning it on here changes nothing by itself.",
+  },
+  {
     key: "autoConfirmExact",
     title: "Link automatically on an exact PO number",
     help: "Only when the comparison is clean as well. This confirms the link, never the payment.",

@@ -43,10 +43,18 @@ def test_no_migration_drops_an_unnamed_constraint():
 
 def test_no_migration_still_carries_the_autogenerate_warning():
     """Alembic writes a 'this directive will fail as rendered' comment when it
-    cannot name something. If it survived review, the migration is broken."""
+    cannot name something. If it survived review, the migration is broken.
+
+    Matched on alembic's own comment rather than the phrase alone, so a
+    docstring that explains the hazard — which is worth writing — does not
+    read as the hazard itself.
+    """
+    marker = re.compile(
+        r"^\s*#\s*WARNING: constraint name is None", re.M
+    )
     offenders = [
         path.name for path in MIGRATIONS
-        if "will fail as" in path.read_text(encoding="utf-8")
+        if marker.search(path.read_text(encoding="utf-8"))
     ]
     assert not offenders, ", ".join(offenders)
 
@@ -75,3 +83,35 @@ def test_the_chain_has_exactly_one_root_and_no_forks():
     named = [p for p in parents if p is not None]
     duplicates = {p for p in named if named.count(p) > 1}
     assert not duplicates, f"branched history - these have two children: {duplicates}"
+
+
+def test_no_migration_adds_a_not_null_column_without_a_default():
+    """`ALTER TABLE ... ADD COLUMN ... NOT NULL` with no default fails on
+    PostgreSQL the moment the table has a single row.
+
+    It passes locally against an empty test database and on SQLite, then takes
+    the deploy down on a server with real data — the same shape of failure as
+    the unnamed-constraint bug above, and just as invisible in review.
+    A `server_default` backfills the existing rows and makes it safe.
+
+    Only ADD COLUMN is checked. A column declared NOT NULL inside a
+    `create_table` is fine: the table is new, so it has no rows to violate it.
+    """
+    offenders = []
+    # add_column(...) up to its closing paren, across lines.
+    pattern = re.compile(r"add_column\(\s*sa\.Column\((.*?)\)\s*\)", re.S)
+    for path in MIGRATIONS:
+        source = path.read_text(encoding="utf-8")
+        for match in pattern.finditer(source):
+            body = match.group(1)
+            if "nullable=False" not in body:
+                continue
+            if "server_default" in body:
+                continue
+            name = re.search(r"""['"]([a-z_]+)['"]""", body)
+            offenders.append(f"{path.name}: {name.group(1) if name else body[:40]}")
+    assert not offenders, (
+        "A NOT NULL column added to an existing table needs a server_default, "
+        "or the migration fails on any database that already has rows:\n  "
+        + "\n  ".join(offenders)
+    )

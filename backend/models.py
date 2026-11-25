@@ -229,6 +229,21 @@ class Extraction(db.Model):
     # Why a failed extraction failed, in words, so History can show it without
     # the client parsing the stored payload.
     error_message = db.Column(db.String(500), nullable=True)
+    # ── Payment position (P2.6) ─────────────────────────────────────────
+    # A cache with a single writer (payments.recompute_payment_state), in the
+    # same spirit as validation_status: the figures are always recomputed from
+    # the payment rows, and these columns exist so "show me everything
+    # overdue" is a question SQL can answer without loading every invoice.
+    amount_paid = db.Column(db.Numeric(18, 4), nullable=False, default=0)
+    # unpaid | partially_paid | paid | overdue | disputed
+    payment_state = db.Column(db.String(20), nullable=True, index=True)
+    # A dispute is a human assertion, not a derived figure, so it is stored
+    # rather than computed - and it outranks every other state, because an
+    # invoice somebody is arguing about must not sit quietly in "overdue".
+    disputed_at = db.Column(db.DateTime, nullable=True)
+    disputed_by_user_id = db.Column(db.String, db.ForeignKey("users.id"), nullable=True)
+    dispute_reason = db.Column(db.String(500), nullable=True)
+
     # Review state: set when a human has looked at and accepted the document.
     reviewed_at = db.Column(db.DateTime, nullable=True, index=True)
     reviewed_by_user_id = db.Column(db.String, db.ForeignKey("users.id"), nullable=True)
@@ -264,6 +279,9 @@ class Extraction(db.Model):
             "processingMs": self.processing_ms,
             "errorMessage": self.error_message,
             "duplicateCount": duplicate_count,
+            "amountPaid": as_json(self.amount_paid),
+            "paymentState": self.payment_state,
+            "dueDate": self.due_date,
             "reviewed": self.reviewed_at is not None,
             "reviewedAt": (
                 self.reviewed_at.isoformat() + "Z" if self.reviewed_at else None
@@ -533,7 +551,11 @@ class PurchaseOrder(db.Model):
         DRAFT: {PENDING_APPROVAL, CANCELLED},
         # A rejected PO returns to draft to be corrected and resubmitted.
         PENDING_APPROVAL: {APPROVED, DRAFT, CANCELLED},
-        APPROVED: {SENT, CANCELLED},
+        # PARTIALLY_RECEIVED and FULLY_RECEIVED are reachable directly:
+        # goods arriving is proof the order reached the supplier, and refusing
+        # to record a delivery because nobody pressed "sent" would make the
+        # paperwork argue with the loading dock.
+        APPROVED: {SENT, PARTIALLY_RECEIVED, FULLY_RECEIVED, CANCELLED},
         SENT: {PARTIALLY_RECEIVED, FULLY_RECEIVED, CANCELLED},
         PARTIALLY_RECEIVED: {FULLY_RECEIVED, CLOSED, CANCELLED},
         FULLY_RECEIVED: {CLOSED},
@@ -610,6 +632,12 @@ class PurchaseOrder(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
+    receipts = db.relationship(
+        "GoodsReceipt",
+        back_populates="purchase_order",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+    )
     lines = db.relationship(
         "PurchaseOrderLine",
         back_populates="purchase_order",
@@ -727,6 +755,11 @@ class PurchaseOrderLine(db.Model):
     # so the received/invoiced position of a line has one home from the start,
     # and never written by the purchase-order API itself.
     quantity_received = db.Column(db.Numeric(18, 4), nullable=False, default=0)
+    # What was received LESS what was damaged or sent back. The figure an
+    # invoice is measured against, because you do not owe for goods you
+    # refused or that arrived broken. Maintained by
+    # goods_receipts.recompute_received as a cache with a single writer.
+    quantity_accepted = db.Column(db.Numeric(18, 4), nullable=False, default=0)
     quantity_invoiced = db.Column(db.Numeric(18, 4), nullable=False, default=0)
 
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
@@ -747,6 +780,7 @@ class PurchaseOrderLine(db.Model):
             "taxAmount": as_json(self.tax_amount),
             "lineTotal": as_json(self.line_total),
             "quantityReceived": as_json(self.quantity_received),
+            "quantityAccepted": as_json(self.quantity_accepted),
             "quantityInvoiced": as_json(self.quantity_invoiced),
         }
 
@@ -842,6 +876,15 @@ class MatchingSettings(db.Model):
     # control that stops spend being committed after the fact.
     block_unapproved_po = db.Column(db.Boolean, nullable=False, default=True)
 
+    # Block an invoice for goods that were never recorded as received, and
+    # for quantities beyond what was accepted. On by default - billing for
+    # undelivered goods is the classic payables loss - but it only fires for
+    # an organization that has actually posted a goods receipt, so turning the
+    # feature on is what switches the control on. Without that condition,
+    # every invoice in every organization not using receipts would block the
+    # day this shipped.
+    require_goods_receipt = db.Column(db.Boolean, nullable=False, default=True)
+
     # Link an invoice to its order automatically when the PO number on the
     # document is an exact hit AND the comparison comes back clean. This
     # confirms the LINK, never the invoice: approval is P2.5's decision and is
@@ -863,6 +906,7 @@ class MatchingSettings(db.Model):
             "totalToleranceAmount": as_json(self.total_tolerance_amount),
             "requirePoReference": bool(self.require_po_reference),
             "blockUnapprovedPo": bool(self.block_unapproved_po),
+            "requireGoodsReceipt": bool(self.require_goods_receipt),
             "autoConfirmExact": bool(self.auto_confirm_exact),
             "updatedAt": _iso(self.updated_at),
         }
@@ -1003,6 +1047,910 @@ class InvoiceMatch(db.Model):
             }
         if comparison is not None:
             data["comparison"] = comparison
+        return data
+
+
+class GoodsReceipt(db.Model):
+    """What actually turned up, against one purchase order.
+
+    The third leg of three-way matching. An order says what was agreed and an
+    invoice says what is being charged; neither is evidence that anything
+    arrived, and "we paid for goods we never received" is the oldest loss in
+    accounts payable.
+
+    A receipt is a statement of fact rather than a request, so there is no
+    approval step. There is a `posted` step: only a posted receipt counts
+    toward what has been received, the same rule that stops an unconfirmed
+    invoice match consuming an order's value. A half-entered delivery note
+    sitting in draft must not make an invoice payable.
+
+    Nothing is ever deleted. A receipt recorded in error is cancelled, because
+    it is a record of a physical event somebody asserted at a point in time.
+    """
+    __tablename__ = "goods_receipts"
+    __table_args__ = (
+        db.UniqueConstraint("organization_id", "grn_number", name="uq_grn_org_number"),
+    )
+
+    DRAFT = "draft"
+    POSTED = "posted"
+    CANCELLED = "cancelled"
+    STATUSES = (DRAFT, POSTED, CANCELLED)
+
+    TRANSITIONS: dict[str, set[str]] = {
+        DRAFT: {POSTED, CANCELLED},
+        # A posted receipt can still be cancelled - goods get returned, and a
+        # delivery note gets mis-keyed - but it cannot quietly go back to
+        # draft, because invoices may already have been matched against it.
+        POSTED: {CANCELLED},
+        CANCELLED: set(),
+    }
+    EDITABLE_STATUSES = {DRAFT}
+
+    id = db.Column(db.String, primary_key=True, default=_uuid)
+    organization_id = db.Column(
+        db.String, db.ForeignKey("organizations.id"), nullable=False, index=True
+    )
+    purchase_order_id = db.Column(
+        db.String, db.ForeignKey("purchase_orders.id"), nullable=False, index=True
+    )
+    grn_number = db.Column(db.String(60), nullable=False, index=True)
+    status = db.Column(db.String(20), nullable=False, default=DRAFT, index=True)
+
+    # Same text ISO form as the order dates, so the two compare without a
+    # parsing layer between them.
+    received_date = db.Column(db.String(40), nullable=True)
+    # The supplier's own delivery/dispatch note number, which is what a
+    # warehouse argument is actually settled with.
+    delivery_note_ref = db.Column(db.String(120), nullable=True)
+    carrier = db.Column(db.String(120), nullable=True)
+    notes = db.Column(db.Text, nullable=True)
+
+    received_by_user_id = db.Column(db.String, db.ForeignKey("users.id"), nullable=True)
+    created_by_user_id = db.Column(db.String, db.ForeignKey("users.id"), nullable=True)
+    posted_at = db.Column(db.DateTime, nullable=True)
+    posted_by_user_id = db.Column(db.String, db.ForeignKey("users.id"), nullable=True)
+    cancelled_at = db.Column(db.DateTime, nullable=True)
+    cancelled_by_user_id = db.Column(db.String, db.ForeignKey("users.id"), nullable=True)
+    cancellation_reason = db.Column(db.String(500), nullable=True)
+
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+
+    lines = db.relationship(
+        "GoodsReceiptLine",
+        back_populates="goods_receipt",
+        cascade="all, delete-orphan",
+        order_by="GoodsReceiptLine.line_no",
+        lazy="selectin",
+    )
+    purchase_order = db.relationship("PurchaseOrder", back_populates="receipts")
+
+    def can_transition_to(self, status: str) -> bool:
+        return status in self.TRANSITIONS.get(self.status, set())
+
+    @property
+    def is_editable(self) -> bool:
+        return self.status in self.EDITABLE_STATUSES
+
+    def list_item(self, line_count=None) -> dict:
+        return {
+            "id": self.id,
+            "grnNumber": self.grn_number,
+            "status": self.status,
+            "purchaseOrderId": self.purchase_order_id,
+            "receivedDate": self.received_date,
+            "deliveryNoteRef": self.delivery_note_ref,
+            "lineCount": line_count if line_count is not None else len(self.lines),
+            "createdAt": _iso(self.created_at),
+            "postedAt": _iso(self.posted_at),
+        }
+
+    def public(self, *, purchase_order=None, received_by=None, posted_by=None) -> dict:
+        data = {
+            "id": self.id,
+            "grnNumber": self.grn_number,
+            "status": self.status,
+            "isEditable": self.is_editable,
+            "nextStatuses": sorted(self.TRANSITIONS.get(self.status, set())),
+            "purchaseOrderId": self.purchase_order_id,
+            "receivedDate": self.received_date,
+            "deliveryNoteRef": self.delivery_note_ref,
+            "carrier": self.carrier,
+            "notes": self.notes,
+            "receivedBy": received_by,
+            "postedBy": posted_by,
+            "postedAt": _iso(self.posted_at),
+            "cancelledAt": _iso(self.cancelled_at),
+            "cancellationReason": self.cancellation_reason,
+            "createdAt": _iso(self.created_at),
+            "lines": [line.public() for line in self.lines],
+        }
+        if purchase_order is not None:
+            data["purchaseOrder"] = {
+                "id": purchase_order.id,
+                "poNumber": purchase_order.po_number,
+                "status": purchase_order.status,
+                "currency": purchase_order.currency,
+                "supplierId": purchase_order.supplier_id,
+            }
+        return data
+
+
+class GoodsReceiptLine(db.Model):
+    """One ordered item, as it actually arrived.
+
+    Three counts, because they have three different consequences and lumping
+    them together loses the one fact that decides who pays:
+
+    * `quantity_received` - what physically arrived.
+    * `quantity_damaged`  - of those, how many arrived broken.
+    * `quantity_rejected` - how many were sent back intact: wrong item, wrong
+      specification, short-dated stock.
+
+    `quantity_accepted` is what is left, and it is the only one of the four
+    that matching uses. You do not owe a supplier for goods you refused or for
+    goods that arrived smashed, so an invoice is measured against what was
+    accepted - never against what was delivered.
+    """
+    __tablename__ = "goods_receipt_lines"
+
+    id = db.Column(db.String, primary_key=True, default=_uuid)
+    goods_receipt_id = db.Column(
+        db.String, db.ForeignKey("goods_receipts.id"), nullable=False, index=True
+    )
+    organization_id = db.Column(
+        db.String, db.ForeignKey("organizations.id"), nullable=False, index=True
+    )
+    # Always against a specific order line: "we received 8 of something" is not
+    # a fact anything can be matched against.
+    purchase_order_line_id = db.Column(
+        db.String, db.ForeignKey("purchase_order_lines.id"), nullable=False, index=True
+    )
+
+    line_no = db.Column(db.Integer, nullable=False, default=1)
+
+    # Numeric, not Float, for the same reason the order lines are: 0.1 of a
+    # tonne has no exact binary representation.
+    quantity_received = db.Column(db.Numeric(18, 4), nullable=False, default=0)
+    quantity_damaged = db.Column(db.Numeric(18, 4), nullable=False, default=0)
+    quantity_rejected = db.Column(db.Numeric(18, 4), nullable=False, default=0)
+    # Stored rather than derived on read, so the arithmetic is done once, in
+    # one place, and a query can sum it without loading every row into Python.
+    quantity_accepted = db.Column(db.Numeric(18, 4), nullable=False, default=0)
+
+    # Why some were refused or written off. The useful half of the record when
+    # somebody queries the invoice three weeks later.
+    notes = db.Column(db.String(500), nullable=True)
+
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    goods_receipt = db.relationship("GoodsReceipt", back_populates="lines")
+    purchase_order_line = db.relationship("PurchaseOrderLine")
+
+    def public(self) -> dict:
+        po_line = self.purchase_order_line
+        return {
+            "id": self.id,
+            "lineNo": self.line_no,
+            "purchaseOrderLineId": self.purchase_order_line_id,
+            "description": po_line.description if po_line else None,
+            "sku": po_line.sku if po_line else None,
+            "unit": po_line.unit if po_line else None,
+            "quantityOrdered": as_json(po_line.quantity) if po_line else None,
+            "quantityReceived": as_json(self.quantity_received),
+            "quantityDamaged": as_json(self.quantity_damaged),
+            "quantityRejected": as_json(self.quantity_rejected),
+            "quantityAccepted": as_json(self.quantity_accepted),
+            "notes": self.notes,
+        }
+
+
+class ApprovalRule(db.Model):
+    """When approval is needed, and from whom. Configuration, not code.
+
+    The brief's requirement is "configurable, not hardcoded", and the reason
+    is not flexibility for its own sake: every organization draws the line in
+    a different place, and a threshold baked into a deployment is one that
+    gets changed by a developer at the worst possible moment.
+
+    Conditions are ANDed, and an unset condition does not constrain. A rule
+    with no conditions at all therefore matches everything, which is the
+    normal way to express "everything needs one approval".
+
+    **The highest-priority matching rule wins, and only that one applies.**
+    Combining every matching rule would produce approval chains nobody can
+    predict or explain - and an approval chain you cannot explain is one
+    people route around.
+    """
+    __tablename__ = "approval_rules"
+
+    PURCHASE_ORDER = "purchase_order"
+    INVOICE = "invoice"
+    SUBJECTS = (PURCHASE_ORDER, INVOICE)
+
+    id = db.Column(db.String, primary_key=True, default=_uuid)
+    organization_id = db.Column(
+        db.String, db.ForeignKey("organizations.id"), nullable=False, index=True
+    )
+    name = db.Column(db.String(200), nullable=False)
+    subject_type = db.Column(db.String(30), nullable=False, default=PURCHASE_ORDER,
+                             index=True)
+    active = db.Column(db.Boolean, nullable=False, default=True, index=True)
+    # Higher wins. Ties break on creation order, so a rule added later does not
+    # silently displace an existing one of equal priority.
+    priority = db.Column(db.Integer, nullable=False, default=0)
+
+    # ── Conditions. All optional; all ANDed. ──
+    # Numeric, never Float: these are compared against money, and a Float
+    # threshold would disagree with the Numeric totals it is gating.
+    min_amount = db.Column(db.Numeric(18, 4), nullable=True)
+    max_amount = db.Column(db.Numeric(18, 4), nullable=True)
+    currency = db.Column(db.String(3), nullable=True)
+    department = db.Column(db.String(120), nullable=True)
+    cost_center = db.Column(db.String(120), nullable=True)
+    project = db.Column(db.String(120), nullable=True)
+    category = db.Column(db.String(120), nullable=True)
+    supplier_id = db.Column(db.String, db.ForeignKey("suppliers.id"), nullable=True)
+
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+    created_by_user_id = db.Column(db.String, db.ForeignKey("users.id"), nullable=True)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow,
+                           onupdate=datetime.utcnow)
+
+    steps = db.relationship(
+        "ApprovalRuleStep",
+        back_populates="rule",
+        cascade="all, delete-orphan",
+        order_by="ApprovalRuleStep.level",
+        lazy="selectin",
+    )
+
+    def public(self, *, supplier_name=None) -> dict:
+        return {
+            "id": self.id,
+            "name": self.name,
+            "subjectType": self.subject_type,
+            "active": bool(self.active),
+            "priority": self.priority,
+            "conditions": {
+                "minAmount": as_json(self.min_amount),
+                "maxAmount": as_json(self.max_amount),
+                "currency": self.currency,
+                "department": self.department,
+                "costCenter": self.cost_center,
+                "project": self.project,
+                "category": self.category,
+                "supplierId": self.supplier_id,
+                "supplierName": supplier_name,
+            },
+            "steps": [step.public() for step in self.steps],
+            "createdAt": _iso(self.created_at),
+        }
+
+
+class ApprovalRuleStep(db.Model):
+    """One level of a rule's approval chain.
+
+    Levels run in order: level 2 is not asked until level 1 is satisfied, so a
+    director is not troubled by something their manager is going to reject.
+    Approvers *within* a level are asked at the same time - that is what
+    "parallel" means here - and `require_all` decides whether every one of
+    them must sign or any one is enough.
+    """
+    __tablename__ = "approval_rule_steps"
+
+    BY_ROLE = "role"
+    BY_USER = "user"
+
+    id = db.Column(db.String, primary_key=True, default=_uuid)
+    rule_id = db.Column(
+        db.String, db.ForeignKey("approval_rules.id"), nullable=False, index=True
+    )
+    organization_id = db.Column(
+        db.String, db.ForeignKey("organizations.id"), nullable=False, index=True
+    )
+    level = db.Column(db.Integer, nullable=False, default=1)
+
+    # A role rather than a person wherever possible: naming an individual is
+    # how an approval chain breaks the week they leave.
+    approver_type = db.Column(db.String(20), nullable=False, default=BY_ROLE)
+    approver_role = db.Column(db.String(40), nullable=True)
+    approver_user_id = db.Column(db.String, db.ForeignKey("users.id"), nullable=True)
+
+    require_all = db.Column(db.Boolean, nullable=False, default=False)
+
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    rule = db.relationship("ApprovalRule", back_populates="steps")
+
+    def public(self) -> dict:
+        return {
+            "id": self.id,
+            "level": self.level,
+            "approverType": self.approver_type,
+            "approverRole": self.approver_role,
+            "approverUserId": self.approver_user_id,
+            "requireAll": bool(self.require_all),
+        }
+
+
+class ApprovalRequest(db.Model):
+    """One document's journey through an approval chain.
+
+    The chain is **materialized at submission** into `ApprovalRequestStep`
+    rows rather than re-read from the rule on every decision. Editing a rule
+    must not rewrite an approval that is already in flight: the people who
+    signed it signed a specific chain, and an audit trail that changes shape
+    retrospectively is not one.
+
+    `amount` and `currency` are snapshots for the same reason - what was
+    approved, not what the document says today.
+    """
+    __tablename__ = "approval_requests"
+
+    PENDING = "pending"
+    INFO_REQUESTED = "info_requested"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+    CANCELLED = "cancelled"
+    STATUSES = (PENDING, INFO_REQUESTED, APPROVED, REJECTED, CANCELLED)
+    OPEN_STATUSES = (PENDING, INFO_REQUESTED)
+
+    id = db.Column(db.String, primary_key=True, default=_uuid)
+    organization_id = db.Column(
+        db.String, db.ForeignKey("organizations.id"), nullable=False, index=True
+    )
+    subject_type = db.Column(db.String(30), nullable=False, index=True)
+    subject_id = db.Column(db.String(64), nullable=False, index=True)
+
+    # Which rule produced this chain. Nullable: a request raised when no rule
+    # matched still needs somewhere to live.
+    rule_id = db.Column(db.String, db.ForeignKey("approval_rules.id"), nullable=True)
+    rule_name = db.Column(db.String(200), nullable=True)
+
+    status = db.Column(db.String(20), nullable=False, default=PENDING, index=True)
+    current_level = db.Column(db.Integer, nullable=False, default=1)
+
+    amount = db.Column(db.Numeric(18, 4), nullable=True)
+    currency = db.Column(db.String(10), nullable=True)
+
+    submitted_by_user_id = db.Column(
+        db.String, db.ForeignKey("users.id"), nullable=True
+    )
+    submitted_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+    completed_at = db.Column(db.DateTime, nullable=True)
+    # The last decision's words, surfaced without loading the whole history.
+    outcome_comment = db.Column(db.String(1000), nullable=True)
+    last_reminded_at = db.Column(db.DateTime, nullable=True)
+
+    steps = db.relationship(
+        "ApprovalRequestStep",
+        back_populates="request",
+        cascade="all, delete-orphan",
+        order_by="ApprovalRequestStep.level",
+        lazy="selectin",
+    )
+    events = db.relationship(
+        "ApprovalEvent",
+        back_populates="request",
+        cascade="all, delete-orphan",
+        order_by="ApprovalEvent.created_at",
+        lazy="selectin",
+    )
+
+    @property
+    def is_open(self) -> bool:
+        return self.status in self.OPEN_STATUSES
+
+    def public(self, *, labels=None, subject=None) -> dict:
+        labels = labels or {}
+        data = {
+            "id": self.id,
+            "subjectType": self.subject_type,
+            "subjectId": self.subject_id,
+            "status": self.status,
+            "isOpen": self.is_open,
+            "currentLevel": self.current_level,
+            "ruleId": self.rule_id,
+            "ruleName": self.rule_name,
+            "amount": as_json(self.amount),
+            "currency": self.currency,
+            "submittedBy": labels.get(self.submitted_by_user_id),
+            "submittedAt": _iso(self.submitted_at),
+            "completedAt": _iso(self.completed_at),
+            "outcomeComment": self.outcome_comment,
+            "lastRemindedAt": _iso(self.last_reminded_at),
+            "steps": [step.public(labels=labels) for step in self.steps],
+            "history": [event.public(labels=labels) for event in self.events],
+        }
+        if subject is not None:
+            data["subject"] = subject
+        return data
+
+
+class ApprovalRequestStep(db.Model):
+    """One person's place in one approval chain.
+
+    A row per approver, not per level, so "who still has not responded" is a
+    question SQL can answer and a reminder knows where to go.
+    """
+    __tablename__ = "approval_request_steps"
+
+    PENDING = "pending"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+    SKIPPED = "skipped"
+    STATUSES = (PENDING, APPROVED, REJECTED, SKIPPED)
+
+    id = db.Column(db.String, primary_key=True, default=_uuid)
+    request_id = db.Column(
+        db.String, db.ForeignKey("approval_requests.id"), nullable=False, index=True
+    )
+    organization_id = db.Column(
+        db.String, db.ForeignKey("organizations.id"), nullable=False, index=True
+    )
+    level = db.Column(db.Integer, nullable=False, default=1)
+
+    # Resolved to a person at materialization where the rule named a role, so
+    # the chain is a list of names rather than a puzzle to re-solve later.
+    approver_user_id = db.Column(
+        db.String, db.ForeignKey("users.id"), nullable=True, index=True
+    )
+    # Kept alongside, because "the finance manager approved this" is the
+    # meaningful statement and the person may hold a different role later.
+    approver_role = db.Column(db.String(40), nullable=True)
+    require_all = db.Column(db.Boolean, nullable=False, default=False)
+
+    status = db.Column(db.String(20), nullable=False, default=PENDING, index=True)
+    decided_at = db.Column(db.DateTime, nullable=True)
+    comment = db.Column(db.String(1000), nullable=True)
+
+    # Who actually pressed the button, when that is not the named approver.
+    # Both are kept: "approved by Ada on behalf of Ben" is the honest record,
+    # and collapsing it to either name alone loses half of it.
+    acted_by_user_id = db.Column(db.String, db.ForeignKey("users.id"), nullable=True)
+
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    request = db.relationship("ApprovalRequest", back_populates="steps")
+
+    def public(self, *, labels=None) -> dict:
+        labels = labels or {}
+        return {
+            "id": self.id,
+            "level": self.level,
+            "approverUserId": self.approver_user_id,
+            "approver": labels.get(self.approver_user_id),
+            "approverRole": self.approver_role,
+            "requireAll": bool(self.require_all),
+            "status": self.status,
+            "decidedAt": _iso(self.decided_at),
+            "comment": self.comment,
+            "actedBy": labels.get(self.acted_by_user_id),
+            "onBehalf": bool(
+                self.acted_by_user_id
+                and self.acted_by_user_id != self.approver_user_id
+            ),
+        }
+
+
+class ApprovalEvent(db.Model):
+    """Everything that happened to one approval request, in order.
+
+    Append-only. The steps say where a request stands; this says how it got
+    there, including the things that leave no trace in the steps at all - a
+    reminder sent, a question asked, an answer given.
+    """
+    __tablename__ = "approval_events"
+
+    SUBMITTED = "submitted"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+    INFO_REQUESTED = "info_requested"
+    INFO_PROVIDED = "info_provided"
+    DELEGATED = "delegated"
+    REMINDED = "reminded"
+    CANCELLED = "cancelled"
+    LEVEL_COMPLETED = "level_completed"
+    ACTIONS = (
+        SUBMITTED, APPROVED, REJECTED, INFO_REQUESTED, INFO_PROVIDED,
+        DELEGATED, REMINDED, CANCELLED, LEVEL_COMPLETED,
+    )
+
+    id = db.Column(db.String, primary_key=True, default=_uuid)
+    request_id = db.Column(
+        db.String, db.ForeignKey("approval_requests.id"), nullable=False, index=True
+    )
+    organization_id = db.Column(
+        db.String, db.ForeignKey("organizations.id"), nullable=False, index=True
+    )
+    action = db.Column(db.String(30), nullable=False)
+    user_id = db.Column(db.String, db.ForeignKey("users.id"), nullable=True)
+    # Who it concerned, when that differs from who did it.
+    target_user_id = db.Column(db.String, db.ForeignKey("users.id"), nullable=True)
+    level = db.Column(db.Integer, nullable=True)
+    comment = db.Column(db.String(1000), nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+
+    request = db.relationship("ApprovalRequest", back_populates="events")
+
+    def public(self, *, labels=None) -> dict:
+        labels = labels or {}
+        return {
+            "id": self.id,
+            "action": self.action,
+            "by": labels.get(self.user_id),
+            "target": labels.get(self.target_user_id),
+            "level": self.level,
+            "comment": self.comment,
+            "at": _iso(self.created_at),
+        }
+
+
+class ApprovalDelegation(db.Model):
+    """"While I am away, X may approve for me."
+
+    Date-bounded on purpose. An open-ended delegation is how one person
+    quietly acquires everybody's authority, and the holiday it was created for
+    ended two years ago.
+
+    Delegation is resolved when a decision is made, not when the chain is
+    built, so going away after a request was raised still works - which is the
+    case that actually happens.
+    """
+    __tablename__ = "approval_delegations"
+
+    id = db.Column(db.String, primary_key=True, default=_uuid)
+    organization_id = db.Column(
+        db.String, db.ForeignKey("organizations.id"), nullable=False, index=True
+    )
+    from_user_id = db.Column(
+        db.String, db.ForeignKey("users.id"), nullable=False, index=True
+    )
+    to_user_id = db.Column(
+        db.String, db.ForeignKey("users.id"), nullable=False, index=True
+    )
+    # ISO dates, inclusive, same text form as the order dates elsewhere.
+    starts_on = db.Column(db.String(40), nullable=True)
+    ends_on = db.Column(db.String(40), nullable=True)
+    reason = db.Column(db.String(500), nullable=True)
+    active = db.Column(db.Boolean, nullable=False, default=True, index=True)
+
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_by_user_id = db.Column(db.String, db.ForeignKey("users.id"), nullable=True)
+
+    def public(self, *, labels=None) -> dict:
+        labels = labels or {}
+        return {
+            "id": self.id,
+            "fromUserId": self.from_user_id,
+            "from": labels.get(self.from_user_id),
+            "toUserId": self.to_user_id,
+            "to": labels.get(self.to_user_id),
+            "startsOn": self.starts_on,
+            "endsOn": self.ends_on,
+            "reason": self.reason,
+            "active": bool(self.active),
+            "createdAt": _iso(self.created_at),
+        }
+
+
+class SupplierPayment(db.Model):
+    """Money paid to a supplier against an invoice. A RECORD, not an instruction.
+
+    Not to be confused with `Payment`, which is the opposite direction: what a
+    customer pays InvoiceParsed for their subscription. This table is what the
+    customer pays their own suppliers.
+
+    **This product initiates no payments and holds no payment credentials.**
+    Somebody pays an invoice through their bank and records here that they did.
+    That boundary is deliberate and is worth defending: the moment software can
+    move money out of a business, it becomes the most valuable thing in the
+    building to compromise, and every control around it has to be an order of
+    magnitude stronger than anything else here.
+
+    `source` and `provider_reference` exist so a later integration can record
+    what it saw without a migration. Nothing reads them yet.
+    """
+    __tablename__ = "supplier_payments"
+
+    BANK_TRANSFER = "bank_transfer"
+    CARD = "card"
+    CASH = "cash"
+    CHEQUE = "cheque"
+    DIRECT_DEBIT = "direct_debit"
+    OTHER = "other"
+    METHODS = (BANK_TRANSFER, CARD, CASH, CHEQUE, DIRECT_DEBIT, OTHER)
+
+    MANUAL = "manual"
+    IMPORTED = "imported"
+    SOURCES = (MANUAL, IMPORTED)
+
+    id = db.Column(db.String, primary_key=True, default=_uuid)
+    organization_id = db.Column(
+        db.String, db.ForeignKey("organizations.id"), nullable=False, index=True
+    )
+    extraction_id = db.Column(
+        db.String, db.ForeignKey("extractions.id"), nullable=False, index=True
+    )
+    # Denormalized from the invoice so "what have we paid Acme this year" does
+    # not need a join through every document.
+    supplier_id = db.Column(
+        db.String, db.ForeignKey("suppliers.id"), nullable=True, index=True
+    )
+
+    # Numeric, never Float. A payment is money.
+    amount = db.Column(db.Numeric(18, 4), nullable=False)
+    currency = db.Column(db.String(10), nullable=True)
+    # ISO text, the same form as the invoice dates it is compared against.
+    paid_on = db.Column(db.String(40), nullable=True, index=True)
+    method = db.Column(db.String(30), nullable=False, default=BANK_TRANSFER)
+    # The bank's reference. What a payment is actually traced by when a
+    # supplier says they never received it, and what P2.7 reconciles against.
+    reference = db.Column(db.String(200), nullable=True, index=True)
+    notes = db.Column(db.String(500), nullable=True)
+
+    source = db.Column(db.String(20), nullable=False, default=MANUAL)
+    provider_reference = db.Column(db.String(200), nullable=True)
+
+    recorded_by_user_id = db.Column(
+        db.String, db.ForeignKey("users.id"), nullable=True
+    )
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+
+    # Voided, never deleted: a payment recorded in error is a thing somebody
+    # asserted, and the correction is part of the record.
+    voided_at = db.Column(db.DateTime, nullable=True, index=True)
+    voided_by_user_id = db.Column(db.String, db.ForeignKey("users.id"), nullable=True)
+    void_reason = db.Column(db.String(500), nullable=True)
+
+    @property
+    def is_void(self) -> bool:
+        return self.voided_at is not None
+
+    def public(self, *, recorded_by=None, voided_by=None) -> dict:
+        return {
+            "id": self.id,
+            "extractionId": self.extraction_id,
+            "supplierId": self.supplier_id,
+            "amount": as_json(self.amount),
+            "currency": self.currency,
+            "paidOn": self.paid_on,
+            "method": self.method,
+            "reference": self.reference,
+            "notes": self.notes,
+            "source": self.source,
+            "recordedBy": recorded_by,
+            "createdAt": _iso(self.created_at),
+            "void": self.is_void,
+            "voidedBy": voided_by,
+            "voidedAt": _iso(self.voided_at),
+            "voidReason": self.void_reason,
+        }
+
+
+class BankImport(db.Model):
+    """One batch of bank transactions brought in, and where they came from.
+
+    Kept as its own row rather than stamped onto each transaction because an
+    import is the unit people reason about when something goes wrong: "undo
+    the statement I loaded twice" is a sentence about a batch.
+
+    Two sources, and the first is the point: a bank statement that has already
+    been EXTRACTED by the existing statement pipeline can be imported straight
+    from it. Re-parsing the same PDF with a second, worse parser would be a
+    duplicate of `statement_schema.py` that drifts from it.
+    """
+    __tablename__ = "bank_imports"
+
+    FROM_EXTRACTION = "extraction"
+    FROM_CSV = "csv"
+    FROM_XLSX = "xlsx"
+    SOURCES = (FROM_EXTRACTION, FROM_CSV, FROM_XLSX)
+
+    id = db.Column(db.String, primary_key=True, default=_uuid)
+    organization_id = db.Column(
+        db.String, db.ForeignKey("organizations.id"), nullable=False, index=True
+    )
+    source = db.Column(db.String(20), nullable=False, default=FROM_CSV)
+    extraction_id = db.Column(
+        db.String, db.ForeignKey("extractions.id"), nullable=True, index=True
+    )
+    file_name = db.Column(db.String(255), nullable=True)
+
+    bank_name = db.Column(db.String(200), nullable=True)
+    account_number = db.Column(db.String(120), nullable=True)
+    currency = db.Column(db.String(10), nullable=True)
+    period_start = db.Column(db.String(40), nullable=True)
+    period_end = db.Column(db.String(40), nullable=True)
+    opening_balance = db.Column(db.Numeric(18, 4), nullable=True)
+    closing_balance = db.Column(db.Numeric(18, 4), nullable=True)
+
+    transaction_count = db.Column(db.Integer, nullable=False, default=0)
+    # Rows that were already present and were therefore NOT imported. Counted
+    # rather than silently dropped: "I imported 200 lines and 198 appeared" is
+    # alarming unless the system says why.
+    duplicate_count = db.Column(db.Integer, nullable=False, default=0)
+
+    imported_by_user_id = db.Column(
+        db.String, db.ForeignKey("users.id"), nullable=True
+    )
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+
+    transactions = db.relationship(
+        "BankTransaction",
+        back_populates="bank_import",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+    )
+
+    def public(self, *, imported_by=None) -> dict:
+        return {
+            "id": self.id,
+            "source": self.source,
+            "extractionId": self.extraction_id,
+            "fileName": self.file_name,
+            "bankName": self.bank_name,
+            "accountNumber": self.account_number,
+            "currency": self.currency,
+            "periodStart": self.period_start,
+            "periodEnd": self.period_end,
+            "openingBalance": as_json(self.opening_balance),
+            "closingBalance": as_json(self.closing_balance),
+            "transactionCount": self.transaction_count,
+            "duplicateCount": self.duplicate_count,
+            "importedBy": imported_by,
+            "createdAt": _iso(self.created_at),
+        }
+
+
+class BankTransaction(db.Model):
+    """One line from a bank statement.
+
+    `debit` and `credit` are kept as the statement presents them rather than
+    collapsed into one signed amount, because which column a figure sits in is
+    the statement's own assertion about direction, and re-deriving it from a
+    sign is how an inbound refund gets reconciled against an outbound payment.
+
+    `fingerprint` is what makes importing the same statement twice harmless.
+    """
+    __tablename__ = "bank_transactions"
+    __table_args__ = (
+        # The same line, in the same account, on the same day, for the same
+        # amount, with the same description is the same transaction. A bank
+        # CAN legitimately produce two identical lines, which is why the
+        # fingerprint includes the row's position within its import.
+        db.UniqueConstraint(
+            "organization_id", "fingerprint", name="uq_bank_txn_fingerprint"
+        ),
+    )
+
+    UNMATCHED = "unmatched"
+    MATCHED = "matched"
+    IGNORED = "ignored"
+    STATUSES = (UNMATCHED, MATCHED, IGNORED)
+
+    id = db.Column(db.String, primary_key=True, default=_uuid)
+    organization_id = db.Column(
+        db.String, db.ForeignKey("organizations.id"), nullable=False, index=True
+    )
+    bank_import_id = db.Column(
+        db.String, db.ForeignKey("bank_imports.id"), nullable=False, index=True
+    )
+
+    # ISO text, the same form as every other date in this codebase, so they
+    # compare without a parsing layer between them.
+    txn_date = db.Column(db.String(40), nullable=True, index=True)
+    description = db.Column(db.String(500), nullable=True)
+    reference = db.Column(db.String(200), nullable=True, index=True)
+    debit = db.Column(db.Numeric(18, 4), nullable=True)
+    credit = db.Column(db.Numeric(18, 4), nullable=True)
+    balance = db.Column(db.Numeric(18, 4), nullable=True)
+    currency = db.Column(db.String(10), nullable=True)
+
+    fingerprint = db.Column(db.String(64), nullable=False, index=True)
+    status = db.Column(db.String(20), nullable=False, default=UNMATCHED,
+                       index=True)
+    # Why a line was set aside: bank charges, interest, a transfer between own
+    # accounts. Kept so "unmatched" stays a short list of real problems.
+    ignore_reason = db.Column(db.String(500), nullable=True)
+
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+
+    bank_import = db.relationship("BankImport", back_populates="transactions")
+
+    def public(self) -> dict:
+        return {
+            "id": self.id,
+            "bankImportId": self.bank_import_id,
+            "date": self.txn_date,
+            "description": self.description,
+            "reference": self.reference,
+            "debit": as_json(self.debit),
+            "credit": as_json(self.credit),
+            "balance": as_json(self.balance),
+            "currency": self.currency,
+            "status": self.status,
+            "ignoreReason": self.ignore_reason,
+        }
+
+
+class BankMatch(db.Model):
+    """A bank line tied to a payment the organization recorded.
+
+    Suggested by the engine, confirmed by a person. Only a CONFIRMED match
+    reconciles anything — the same rule as an invoice match not consuming an
+    order's value until somebody has looked at it, and for the same reason: a
+    plausible guess nobody checked is not evidence.
+    """
+    __tablename__ = "bank_matches"
+    __table_args__ = (
+        # One live match per transaction. "Which payment was this" has to have
+        # one answer or a reconciliation is not a reconciliation.
+        db.UniqueConstraint(
+            "bank_transaction_id", name="uq_bank_match_transaction"
+        ),
+    )
+
+    SUGGESTED = "suggested"
+    CONFIRMED = "confirmed"
+    REJECTED = "rejected"
+    STATUSES = (SUGGESTED, CONFIRMED, REJECTED)
+
+    # How the pair was found, strongest first.
+    BY_REFERENCE = "reference"
+    BY_AMOUNT_DATE = "amount_date"
+    BY_AMOUNT = "amount"
+    BY_FUZZY = "fuzzy"
+    BY_MANUAL = "manual"
+
+    id = db.Column(db.String, primary_key=True, default=_uuid)
+    organization_id = db.Column(
+        db.String, db.ForeignKey("organizations.id"), nullable=False, index=True
+    )
+    bank_transaction_id = db.Column(
+        db.String, db.ForeignKey("bank_transactions.id"), nullable=False,
+        index=True,
+    )
+    supplier_payment_id = db.Column(
+        db.String, db.ForeignKey("supplier_payments.id"), nullable=False,
+        index=True,
+    )
+
+    status = db.Column(db.String(20), nullable=False, default=SUGGESTED,
+                       index=True)
+    method = db.Column(db.String(30), nullable=False, default=BY_MANUAL)
+    score = db.Column(db.Float, nullable=False, default=0.0)
+    # The gap between the bank line and the payment, when they do not agree
+    # exactly. Stored so a part-settled or short-paid line is visible as a
+    # figure rather than a feeling.
+    difference = db.Column(db.Numeric(18, 4), nullable=True)
+    note = db.Column(db.String(500), nullable=True)
+
+    confirmed_by_user_id = db.Column(
+        db.String, db.ForeignKey("users.id"), nullable=True
+    )
+    confirmed_at = db.Column(db.DateTime, nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+
+    def public(self, *, transaction=None, payment=None, confirmed_by=None) -> dict:
+        data = {
+            "id": self.id,
+            "bankTransactionId": self.bank_transaction_id,
+            "supplierPaymentId": self.supplier_payment_id,
+            "status": self.status,
+            "method": self.method,
+            "score": self.score,
+            "difference": as_json(self.difference),
+            "note": self.note,
+            "confirmedBy": confirmed_by,
+            "confirmedAt": _iso(self.confirmed_at),
+            "createdAt": _iso(self.created_at),
+        }
+        if transaction is not None:
+            data["transaction"] = transaction.public()
+        if payment is not None:
+            data["payment"] = payment.public()
         return data
 
 

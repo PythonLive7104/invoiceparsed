@@ -230,11 +230,19 @@ def check_can_approve(po: PurchaseOrder, user_id: str) -> None:
 
 
 def transition(po: PurchaseOrder, status: str, *, user_id: str | None = None,
-               reason: str | None = None) -> None:
+               reason: str | None = None, skip_self_check: bool = False) -> None:
     """Move `po` to `status`, stamping whatever that status records.
 
     The single doorway for status changes, so the lifecycle cannot be bypassed
     by a handler that sets `po.status` directly.
+
+    `skip_self_check` is for one caller: the P2.5 approval engine applying the
+    outcome of a chain it has already adjudicated. That engine has run a
+    stricter, chain-aware version of the same rule — who was asked, in what
+    order, and whether the person acting was entitled to — and re-running the
+    simpler check here could refuse a decision the workflow has legitimately
+    reached. It is never set by a request handler acting on a person's direct
+    instruction.
     """
     if status not in PurchaseOrder.STATUSES:
         raise TransitionError(f"'{status}' is not a purchase-order status.",
@@ -265,7 +273,7 @@ def transition(po: PurchaseOrder, status: str, *, user_id: str | None = None,
         po.rejected_at = None
 
     elif status == PurchaseOrder.APPROVED:
-        if user_id:
+        if user_id and not skip_self_check:
             check_can_approve(po, user_id)
         po.approved_at = now
         po.approved_by_user_id = user_id

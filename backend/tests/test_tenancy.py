@@ -456,3 +456,70 @@ def test_the_permission_list_never_exceeds_the_roles_table(app, client):
         body = client.get("/api/auth/me",
                           headers=org_header(app, member, org)).get_json()
         assert set(body["permissions"]) == permissions_for(role), role
+
+
+# ─── The member list ─────────────────────────────────────────────────────────
+def test_the_member_list_names_everyone_in_the_organization(app, client):
+    from roles import APPROVER, FINANCE_MANAGER
+
+    owner = make_user(app, email="owner@example.com", plan="pro")
+    org = make_org(app, owner, name="Acme", plan="pro")
+    for email, role in (("fm@example.com", FINANCE_MANAGER),
+                        ("ap@example.com", APPROVER)):
+        join_org(app, org, make_user(app, email=email, plan="pro"), role)
+
+    body = client.get(
+        "/api/organizations/current/members",
+        headers={**auth_header(app, owner), **org_header(app, owner, org)},
+    ).get_json()
+    emails_or_names = {member["name"] for member in body["members"]}
+    assert len(body["members"]) == 3
+    assert emails_or_names
+    assert all("userId" in member and "role" in member
+               for member in body["members"])
+
+
+def test_email_addresses_need_the_member_management_permission(app, client):
+    """Knowing which colleagues exist is not sensitive — an approval chain
+    names them to your face. The administrative view is, so an address is
+    only included for somebody who holds `members:read`."""
+    from roles import APPROVER
+
+    owner = make_user(app, email="owner@example.com", plan="pro")
+    org = make_org(app, owner, name="Acme", plan="pro")
+    approver = make_user(app, email="ap@example.com", plan="pro")
+    join_org(app, org, approver, APPROVER)
+
+    rich = client.get(
+        "/api/organizations/current/members",
+        headers={**auth_header(app, owner), **org_header(app, owner, org)},
+    ).get_json()
+    assert all("email" in member for member in rich["members"])
+
+    plain = client.get(
+        "/api/organizations/current/members",
+        headers={**auth_header(app, approver),
+                 **org_header(app, approver, org)},
+    ).get_json()
+    assert plain["members"]
+    assert all("email" not in member for member in plain["members"])
+
+
+def test_the_member_list_never_crosses_an_organization(app, client):
+    owner = make_user(app, email="owner@example.com", plan="pro")
+    org = make_org(app, owner, name="Acme", plan="pro")
+    join_org(app, org, make_user(app, email="inside@example.com", plan="pro"),
+             "approver")
+
+    outsider = make_user(app, email="outsider@example.com", plan="pro")
+    # Their own personal organization: just themselves.
+    body = client.get("/api/organizations/current/members",
+                      headers=auth_header(app, outsider)).get_json()
+    assert len(body["members"]) == 1
+
+    # And naming an organization they do not belong to is refused.
+    refused = client.get(
+        "/api/organizations/current/members",
+        headers={**auth_header(app, outsider), "X-Organization-Id": org["id"]},
+    )
+    assert refused.status_code == 403
