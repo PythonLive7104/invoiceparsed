@@ -40,7 +40,7 @@ def _steps(body):
 def _upload(client, app, monkeypatch, headers):
     import routes.extract_routes as er
     monkeypatch.setattr(
-        er, "extract_document", lambda pages, doc_type="invoice": normalize(INVOICE)
+        "openai_service.extract_document", lambda pages, doc_type="invoice": normalize(INVOICE)
     )
     r = client.post(
         "/api/extract",

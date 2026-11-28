@@ -175,16 +175,80 @@ preserved, nothing left unattributed.
 file downloads, list endpoints, usage counting, API-key scope, role refusals and
 webhook dispatch.
 
-### [ ] F4. Background job queue
+### [x] F4. Background job queue
 
-Move extraction off the request path. RQ on the existing Redis is the smallest
-step; Celery if we also want scheduled jobs. Return `202` with a job id and poll
-`/extractions/<id>`. Needs a retry policy with backoff, idempotency keys,
-per-job timeouts, a sweeper that fails rows stuck in `processing`, and separate
-queues so a 60-page bank statement cannot starve single-invoice uploads.
+`jobs.py` (the queue), `extraction_jobs.py` (the work), `worker.py` (the
+process), migration `c387cbbcd244`, plus a `worker` service in the compose
+file. RQ on the Redis already in the stack, on **database 1** — flushing
+rate-limit counters must never throw away a queue of real work.
 
-*Acceptance:* `processing` is always truthful — no row stays in it after a worker
-restart, and a failed job never consumes plan quota.
+Five rules.
+
+1. **The work always leaves the request.** Even when a caller waits for a
+   result, the extraction runs on a worker and the request thread merely
+   polls. A parked thread holding no upstream connection is cheap; a thread
+   doing the work is not, and if it dies the work dies with it.
+2. **The queue carries an id, never a document.** Pages are already on disk
+   before the job is enqueued, so the worker reloads them (`load_pages`). A
+   queue is a message bus, not a file store, and ten megabytes of PDF through
+   Redis would make Redis the most fragile part of the system.
+3. **Two queues.** `documents` is drained before `bulk` is looked at, so a
+   single invoice uploaded behind a sixty-page statement is still answered in
+   seconds. Statements and anything multi-page go to `bulk`.
+4. **Re-enqueuing is harmless.** The job id IS the extraction id, and an id
+   already queued or running is left alone. RQ does *not* deduplicate by id on
+   its own — enqueuing twice overwrites the job hash but pushes the id onto
+   the queue list again, so the work would be picked up twice; the explicit
+   check is what prevents that. `run_extraction` re-reading the row and
+   returning early on a finished one is the backstop for the race the check
+   cannot close, and together they are what make retries safe (3 attempts,
+   backing off 20s / 2m / 7m).
+5. **No queue is a working configuration.** Where Redis is absent or
+   unreachable the work runs inline, exactly as before F4. A product that
+   stops extracting because a cache is down has traded one failure for a
+   worse one.
+
+**Backwards compatibility.** `POST /api/extract` still answers 200 with the
+full result by default: it waits (25s, 50s for statements) on a row a worker
+is filling in. What changed underneath existing API integrations is *where*
+the work runs, not what they get back. Past the budget it answers **202** with
+a job id and a `poll` URL rather than hanging, and `?wait=false` opts into 202
+immediately.
+
+**The acceptance criterion, both halves.**
+
+*No row stays in `processing` after a worker restart.* The sweeper
+(`sweep_stuck`) fails any row queued before `jobs.stuck_cutoff` — the longest
+legitimate job plus its full retry schedule plus a grace period, so it can
+never kill work that was about to succeed. It runs on worker startup (which
+is precisely the restart case) and when the history list is read, because that
+is the moment somebody is asking "did that work?" and this deployment has no
+scheduler. Bounded and indexed, so it costs nothing on the overwhelming
+majority of reads.
+
+*A failed job never consumes plan quota.* Already true, and now tested:
+`usage.count_usage` counts only `completed` rows, so a failure — including a
+swept one — is free.
+
+**Redis is no longer ephemeral.** It was configured `--save "" --appendonly
+no` when it held only rate-limit counters it could afford to lose. It now
+holds queued work, so the compose file enables append-only persistence with a
+volume. Anything that still slips through leaves a row in `processing`, which
+the sweeper fails rather than leaving it claiming to be busy for ever.
+
+**A note on the test seam.** The model call moved out of the route, so the
+14 test files that stubbed `routes.extract_routes.extract_document` now stub
+`openai_service.extract_document` — where the function actually lives. That
+target survives the call moving again, which the previous one did not.
+
+37 tests, exercising the real RQ queue through `fakeredis` rather than only
+the inline fallback. That decision paid for itself immediately: it caught two
+bugs that the inline path cannot see and that would both have shipped
+silently. RQ 2.x rejects a job id containing `:`, so `extract:{id}` raised at
+enqueue time — and because an enqueue failure deliberately falls back to
+running inline, the queue would simply never have been used, with nothing to
+show for it but a log line. And RQ does not deduplicate by job id, so a
+double-submit queued the same work twice.
 
 ### [~] F5. CI, linting, and a test baseline
 

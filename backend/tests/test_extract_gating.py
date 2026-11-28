@@ -22,7 +22,8 @@ FAKE_INVOICE = {
 
 def _stub_extract(monkeypatch):
     import routes.extract_routes as er
-    monkeypatch.setattr(er, "extract_document", lambda pages, doc_type="invoice": FAKE_INVOICE)
+    monkeypatch.setattr(
+        "openai_service.extract_document", lambda pages, doc_type="invoice": FAKE_INVOICE)
 
 
 def _set_page_cap(monkeypatch, pages):
@@ -108,7 +109,8 @@ FAKE_RECEIPT = {
 
 def test_receipt_extraction_stores_doc_type_and_headline(client, app, monkeypatch):
     import routes.extract_routes as er
-    monkeypatch.setattr(er, "extract_document", lambda pages, doc_type="invoice": FAKE_RECEIPT)
+    monkeypatch.setattr(
+        "openai_service.extract_document", lambda pages, doc_type="invoice": FAKE_RECEIPT)
     user = make_user(app, plan="free")
     r = client.post(
         "/api/extract",
@@ -135,7 +137,8 @@ def test_receipt_extraction_stores_doc_type_and_headline(client, app, monkeypatc
 
 def test_receipt_patch_uses_receipt_schema(client, app, monkeypatch):
     import routes.extract_routes as er
-    monkeypatch.setattr(er, "extract_document", lambda pages, doc_type="invoice": FAKE_RECEIPT)
+    monkeypatch.setattr(
+        "openai_service.extract_document", lambda pages, doc_type="invoice": FAKE_RECEIPT)
     user = make_user(app, plan="free")
     created = client.post(
         "/api/extract",
@@ -188,7 +191,8 @@ def test_statement_blocked_below_business(client, app, monkeypatch):
 
 def test_statement_extraction_maps_headline_and_csv(client, app, monkeypatch):
     import routes.extract_routes as er
-    monkeypatch.setattr(er, "extract_document", lambda pages, doc_type="invoice": FAKE_STATEMENT)
+    monkeypatch.setattr(
+        "openai_service.extract_document", lambda pages, doc_type="invoice": FAKE_STATEMENT)
     user = make_user(app, plan="business")
     r = client.post(
         "/api/extract",
@@ -235,7 +239,8 @@ def test_statement_allowance_caps_statements_only(client, app, monkeypatch):
     from plans import PLANS
     monkeypatch.setitem(PLANS["business"], "statementLimit", 2)
     import routes.extract_routes as er
-    monkeypatch.setattr(er, "extract_document", lambda pages, doc_type="invoice": FAKE_STATEMENT)
+    monkeypatch.setattr(
+        "openai_service.extract_document", lambda pages, doc_type="invoice": FAKE_STATEMENT)
     user = make_user(app, plan="business")
 
     # Pre-seed the allowance with 2 completed statements this month.
@@ -264,7 +269,8 @@ def test_statement_allowance_caps_statements_only(client, app, monkeypatch):
     assert body["usage"]["statements"]["atLimit"] is True
 
     # Invoices remain unlimited despite the statement allowance being spent.
-    monkeypatch.setattr(er, "extract_document", lambda pages, doc_type="invoice": FAKE_INVOICE)
+    monkeypatch.setattr(
+        "openai_service.extract_document", lambda pages, doc_type="invoice": FAKE_INVOICE)
     r2 = client.post(
         "/api/extract",
         data={"file": _file("invoice.png"), "doc_type": "invoice"},

@@ -977,7 +977,8 @@ def test_an_uploaded_invoice_is_checked_against_deliveries(
 
     po = create_po(client, headers, supplier["id"])
     document = invoice_doc(reference=po["poNumber"])
-    monkeypatch.setattr(er, "extract_document",
+    monkeypatch.setattr(
+        "openai_service.extract_document",
                         lambda pages, doc_type="invoice": document)
     response = client.post(
         "/api/extract",

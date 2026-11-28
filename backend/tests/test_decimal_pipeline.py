@@ -45,7 +45,7 @@ def _extract(client, app, monkeypatch, payload=DRIFTY_INVOICE, email="dec@exampl
     from invoice_schema import normalize
 
     monkeypatch.setattr(
-        er, "extract_document", lambda pages, doc_type="invoice": normalize(payload)
+        "openai_service.extract_document", lambda pages, doc_type="invoice": normalize(payload)
     )
     user = make_user(app, email=email, plan="pro")
     headers = auth_header(app, user)

@@ -244,6 +244,16 @@ class Extraction(db.Model):
     disputed_by_user_id = db.Column(db.String, db.ForeignKey("users.id"), nullable=True)
     dispute_reason = db.Column(db.String(500), nullable=True)
 
+    # ── Background job (F4) ─────────────────────────────────────────────
+    # Which queued job owns this row, and when it was handed over. The row is
+    # the truth about an extraction, not the job registry — Redis is ephemeral
+    # and a job can vanish, which is exactly why `job_queued_at` exists: past
+    # a known cutoff the sweeper can state with confidence that nothing is
+    # coming back, and fail the row rather than leave it claiming to be busy.
+    job_id = db.Column(db.String(120), nullable=True, index=True)
+    job_queued_at = db.Column(db.DateTime, nullable=True, index=True)
+    job_attempts = db.Column(db.Integer, nullable=False, default=0)
+
     # Review state: set when a human has looked at and accepted the document.
     reviewed_at = db.Column(db.DateTime, nullable=True, index=True)
     reviewed_by_user_id = db.Column(db.String, db.ForeignKey("users.id"), nullable=True)
@@ -277,6 +287,7 @@ class Extraction(db.Model):
             "issueCount": self.validation_issue_count or 0,
             "fieldCount": self.extracted_field_count or 0,
             "processingMs": self.processing_ms,
+            "attempts": self.job_attempts or 0,
             "errorMessage": self.error_message,
             "duplicateCount": duplicate_count,
             "amountPaid": as_json(self.amount_paid),

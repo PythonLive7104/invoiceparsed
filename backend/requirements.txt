@@ -12,6 +12,9 @@ psycopg2-binary==2.9.9
 gunicorn==23.0.0
 sentry-sdk[flask]==2.61.1
 redis==8.0.0
+# Background job queue (F4). RQ on the Redis already in the compose stack —
+# the smallest thing that gets extraction off the request path. Pure Python.
+rq==2.3.1
 openpyxl==3.1.5
 # Purchase-order PDFs (P2.2). Pure Python with manylinux wheels, so it adds
 # no system packages to the image.
@@ -19,4 +22,6 @@ reportlab==4.2.5
 
 # Dev / testing
 pytest==8.3.3
+# Exercises the REAL queue in tests rather than only the inline fallback.
+fakeredis==2.41.0
 ruff==0.8.4

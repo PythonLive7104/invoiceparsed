@@ -1,7 +1,6 @@
 """Extraction endpoints: extract, list, get, update, delete, CSV, original files."""
 import csv
 import io
-import json
 import mimetypes
 import os
 import shutil
@@ -23,6 +22,8 @@ from documents import (
     save_files,
 )
 from extensions import db, limiter
+from extraction_jobs import mark_queued, run_extraction, sweep_stuck
+from jobs import enqueue_extraction
 from models import (
     DuplicateMatch,
     Extraction,
@@ -32,15 +33,12 @@ from models import (
     User,
 )
 from money import as_json, to_decimal
-from openai_service import extract_document
 from plans import PAYABLES, plan_allows
-from po_matching import auto_match, evaluate
+from po_matching import evaluate
 from roles import DOCUMENTS_EXPORT, DOCUMENTS_WRITE
-from suppliers import attach_to_invoice
 from tenancy import current_organization, require_permission, scoped
 from usage import usage_for
 from validation import validate_invoice
-from webhooks import dispatch
 from xlsx_util import document_to_xlsx
 
 extract_bp = Blueprint("extract", __name__, url_prefix="/api")
@@ -388,75 +386,89 @@ def extract():
     db.session.commit()
     save_files(record.id, pages)  # store originals now so the viewer works regardless
 
-    started = time.monotonic()
-    try:
-        document = extract_document(pages, doc_type)
-    except Exception as exc:  # noqa: BLE001 — surface a clean message to the client
-        record.status = "failed"
-        record.processing_ms = int((time.monotonic() - started) * 1000)
-        # Kept in its own column so History can show WHY without the client
-        # having to parse the stored payload.
-        record.error_message = str(exc)[:500]
-        record.data = json.dumps({"error": str(exc)})
-        db.session.commit()
-        return jsonify({"error": f"Extraction failed: {exc}"}), 502
-
-    record.status = "completed"
-    record.error_message = None
-    apply_headline_fields(record, document)
-    # Attach to a supplier (creating one if this is a new vendor) so the
-    # document counts toward that supplier's history straight away.
-    try:
-        attach_to_invoice(record, organization.id, document)
-    except Exception:
-        # Never lose a processed document over supplier bookkeeping.
-        db.session.rollback()
-        current_app.logger.exception(
-            "Supplier attach failed for extraction %s", record.id
-        )
-    _record_processing_stats(
-        record, document, elapsed_ms=(time.monotonic() - started) * 1000
+    # ── Hand the work to a worker ───────────────────────────────────────
+    # The extraction itself never runs on this thread again. Even when the
+    # caller waits for a result below, it waits by polling a row somebody else
+    # is filling in — a parked thread holding no upstream connection is cheap,
+    # and if this process dies the work survives it.
+    job_id = enqueue_extraction(
+        record.id, doc_type=doc_type, page_count=len(pages),
     )
+    mark_queued(record, job_id)
     db.session.commit()
 
-    # After the headline fields are set, so supplier/number/amount comparisons
-    # have something to work with. Never blocks the upload: a detection failure
-    # must not lose a document the customer has already paid to process.
-    try:
-        _record_duplicates(record, organization.id)
-        db.session.commit()
-    except Exception:
-        db.session.rollback()
-        current_app.logger.exception(
-            "Duplicate detection failed for extraction %s", record.id
-        )
+    if job_id is None:
+        # No queue configured or reachable: run it here, exactly as before
+        # P2/F4. A product that stops extracting because a cache is down has
+        # traded one failure for a worse one.
+        run_extraction(record.id, app=current_app._get_current_object())
+        db.session.refresh(record)
+        document = load_document(record) or {}
+        return jsonify({
+            **_serialize(record, document),
+            "usage": usage_for(organization),
+        })
 
-    # Match against an open purchase order. After the supplier is attached, so
-    # a supplier-and-amount suggestion has something to work with. Never blocks
-    # the upload for the same reason duplicate detection does not: the customer
-    # has already paid to process this document, and a matching failure must
-    # not be what loses it.
-    try:
-        if plan_allows(organization.plan, PAYABLES):
-            auto_match(record, document)
-            db.session.commit()
-    except Exception:
-        db.session.rollback()
-        current_app.logger.exception(
-            "PO matching failed for extraction %s", record.id
-        )
+    # `wait` defaults to true so every existing client — including API
+    # integrations written against the synchronous endpoint — keeps getting
+    # its result inline. What changed underneath them is where the work runs,
+    # not what they get back. A caller that would rather poll sends wait=false
+    # and gets a 202 immediately.
+    if _wants_wait(request):
+        finished = _await_extraction(record.id, _wait_budget(doc_type))
+        if finished is not None:
+            return jsonify({
+                **_serialize(finished, load_document(finished) or {}),
+                "usage": usage_for(organization),
+            })
 
-    payload = _serialize(record, document)
+    # Still running. 202 says "accepted, not finished", and the row is already
+    # in History so nothing is lost if the client never comes back.
+    return jsonify({
+        "id": record.id,
+        "status": record.status,
+        "jobId": job_id,
+        "docType": record.doc_type,
+        "fileName": record.file_name,
+        "createdAt": record.created_at.isoformat() + "Z"
+        if record.created_at else None,
+        "poll": f"/api/extractions/{record.id}",
+        "usage": usage_for(organization),
+    }), 202
 
-    # Fire webhooks (background thread; never blocks the response).
-    dispatch(
-        current_app._get_current_object(),
-        organization.id,
-        "extraction.completed",
-        payload,
-    )
 
-    return jsonify({**payload, "usage": usage_for(organization)})
+# How long a waiting request will hold on before answering 202. Shorter than
+# any sensible client or proxy timeout: the point is to answer, not to hang.
+WAIT_BUDGET = {"statement": 50, "default": 25}
+POLL_INTERVAL = 0.4
+
+
+def _wants_wait(req) -> bool:
+    raw = (req.form.get("wait") or req.args.get("wait") or "").strip().lower()
+    return raw not in ("0", "false", "no")
+
+
+def _wait_budget(doc_type: str) -> float:
+    return WAIT_BUDGET.get(doc_type, WAIT_BUDGET["default"])
+
+
+def _await_extraction(extraction_id: str, budget: float):
+    """Poll the row until the worker finishes it, or the budget runs out.
+
+    Returns the finished row, or None to answer 202. Expires the session
+    object each time because the worker is a different process writing the
+    same row — without that this would re-read its own stale copy for ever.
+    """
+    deadline = time.monotonic() + budget
+    while time.monotonic() < deadline:
+        time.sleep(POLL_INTERVAL)
+        db.session.expire_all()
+        row = Extraction.query.filter_by(id=extraction_id).first()
+        if row is None:
+            return None
+        if row.status in ("completed", "failed"):
+            return row
+    return None
 
 
 def _record_duplicates(record, organization_id) -> list:
@@ -659,7 +671,15 @@ def list_extractions():
 
     Replaces a flat 300-row cap, which silently hid everything older once an
     organization had processed a few hundred documents.
+
+    Sweeps abandoned `processing` rows first. This is the moment the answer
+    matters — somebody is looking at the list asking "did that work?" — and
+    this deployment has no scheduler to run it on a timer. Bounded and
+    indexed, so it costs nothing on the overwhelming majority of reads where
+    there is nothing to sweep.
     """
+    if sweep_stuck():
+        db.session.commit()
     args = request.args
     query = _apply_history_filters(
         scoped(Extraction).filter(Extraction.deleted_at.is_(None)), args

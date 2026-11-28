@@ -33,7 +33,7 @@ INVOICE = {
 def document(client, app, monkeypatch):
     import routes.extract_routes as er
     monkeypatch.setattr(
-        er, "extract_document", lambda pages, doc_type="invoice": normalize(INVOICE)
+        "openai_service.extract_document", lambda pages, doc_type="invoice": normalize(INVOICE)
     )
     user = make_user(app, email="audit@example.com", plan="pro")
     headers = auth_header(app, user)

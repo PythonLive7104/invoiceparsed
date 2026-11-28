@@ -139,7 +139,8 @@ def upload(client, app, monkeypatch, headers, document, name="inv.pdf",
            content=b"bytes"):
     """Go through the real upload pipeline, with the extractor stubbed."""
     import routes.extract_routes as er
-    monkeypatch.setattr(er, "extract_document",
+    monkeypatch.setattr(
+        "openai_service.extract_document",
                         lambda pages, doc_type="invoice": document)
     response = client.post(
         "/api/extract",
@@ -1481,7 +1482,7 @@ def test_a_receipt_is_not_matched_against_purchase_orders(
     headers = auth_header(app, owner)
     create_po(client, headers, supplier["id"])
     monkeypatch.setattr(
-        er, "extract_document",
+        "openai_service.extract_document",
         lambda pages, doc_type="invoice": normalize_receipt({
             "merchant": {"name": "Acme Supplies Ltd"},
             "receipt_number": "R-1", "receipt_date": "2026-11-20",

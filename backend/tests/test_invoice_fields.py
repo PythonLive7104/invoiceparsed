@@ -152,7 +152,7 @@ def test_missing_input_still_yields_every_key():
 def _extract(client, app, monkeypatch):
     import routes.extract_routes as er
     monkeypatch.setattr(
-        er, "extract_document", lambda pages, doc_type="invoice": normalize(FULL_INVOICE)
+        "openai_service.extract_document", lambda pages, doc_type="invoice": normalize(FULL_INVOICE)
     )
     user = make_user(app, email="fields@example.com", plan="pro")
     headers = auth_header(app, user)

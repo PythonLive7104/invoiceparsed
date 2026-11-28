@@ -38,7 +38,7 @@ def _upload(client, app, monkeypatch, headers, payload=None, content=b"same-byte
             name="inv.pdf"):
     import routes.extract_routes as er
     monkeypatch.setattr(
-        er, "extract_document",
+        "openai_service.extract_document",
         lambda pages, doc_type="invoice": payload or normalize(INVOICE),
     )
     r = client.post(

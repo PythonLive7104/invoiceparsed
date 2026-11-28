@@ -69,7 +69,15 @@ services:
   redis:
     image: redis:7-alpine
     restart: unless-stopped
-    command: ["redis-server", "--save", "", "--appendonly", "no"]  # ephemeral; rate-limit counters only
+    # Was ephemeral when it held only rate-limit counters. It now also holds
+    # the extraction job queue (F4, db 1), so a restart losing everything
+    # would lose real work. Append-only gives durability at negligible cost
+    # for this volume of writes. Belt and braces: anything that still slips
+    # through leaves a row in `processing`, which the sweeper fails rather
+    # than leaving it claiming to be busy for ever.
+    command: ["redis-server", "--appendonly", "yes", "--appendfsync", "everysec"]
+    volumes:
+      - redisdata:/data
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -83,6 +91,10 @@ services:
     environment:
       # Shared rate-limit store across gunicorn workers (overrides .env memory://).
       RATELIMIT_STORAGE_URI: redis://redis:6379/0
+      # The extraction queue, on a DIFFERENT Redis database from the rate-limit
+      # counters: flushing those must never throw away queued work. Unset this
+      # and the API extracts inline, exactly as it did before F4.
+      JOB_QUEUE_URL: redis://redis:6379/1
       # The app's database is the db service above. Set here rather than in
       # backend/.env so the container hostname can't drift from the service name
       # (and so backend/.env stays usable for host-local dev).
@@ -115,6 +127,42 @@ services:
       retries: 3
       start_period: 20s
 
+  # Where extraction actually happens. Separate from the API so a sixty-page
+  # bank statement being read by a model cannot occupy a thread that is
+  # supposed to be answering HTTP.
+  #
+  # Queue order is deliberate: RQ drains `documents` before it looks at
+  # `bulk`, so a single invoice uploaded behind a long statement is still
+  # answered in seconds. Give the box more RAM and you can run a second
+  # worker pinned to `bulk`; on a 2 GB VPS one worker that prioritises
+  # correctly is the better trade.
+  worker:
+    build: ./backend
+    env_file:
+      - ./backend/.env
+    environment:
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-invoiceparsed}:${POSTGRES_PASSWORD:-invoiceparsed}@db:5432/${POSTGRES_DB:-invoiceparsed}
+      JOB_QUEUE_URL: redis://redis:6379/1
+      SUPABASE_URL: ""
+      # The API container owns the schema. A worker racing it through alembic
+      # on a shared database is how two processes end up half-migrating one.
+      AUTO_CREATE_TABLES: "false"
+    # Bypasses docker-entrypoint.sh, which runs migrations: see above.
+    command: ["python", "worker.py", "documents", "bulk"]
+    restart: unless-stopped
+    volumes:
+      # The SAME uploads volume as the API. The queue carries an extraction
+      # id, and the worker reads the pages off this disk — without the shared
+      # mount every job would fail with "could not be read back from storage".
+      - uploads:/app/uploads
+    depends_on:
+      redis:
+        condition: service_healthy
+      db:
+        condition: service_healthy
+      backend:
+        condition: service_started
+
   web:
     build:
       context: ./frontend
@@ -139,5 +187,6 @@ services:
       - backend
 
 volumes:
+  redisdata:
   uploads:
   pgdata:

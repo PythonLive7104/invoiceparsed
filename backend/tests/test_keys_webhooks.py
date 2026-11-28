@@ -29,7 +29,8 @@ def test_pro_key_lifecycle(client, app):
 
 def test_api_key_authenticates_extraction(client, app, monkeypatch):
     import routes.extract_routes as er
-    monkeypatch.setattr(er, "extract_document", lambda pages, doc_type="invoice": {
+    monkeypatch.setattr(
+        "openai_service.extract_document", lambda pages, doc_type="invoice": {
         "vendor": {"name": "X", "address": None, "email": None}, "invoice_number": None,
         "invoice_date": None, "due_date": None, "currency": "USD", "payment_terms": None,
         "line_items": [], "subtotal": None, "tax": None, "total": 1.0,

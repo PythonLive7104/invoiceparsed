@@ -173,6 +173,52 @@ A key only works against its own environment: an `sk_sandbox_` key with the live
 API base returns 401. `APP_URL` must be a public https URL, because Bachs
 refuses a `success_url` on localhost even in sandbox.
 
+## 7. The extraction worker
+
+Extraction runs in a separate `worker` container, not in the API. `docker
+compose up -d --build` starts it alongside everything else; there is nothing
+extra to configure.
+
+Check it came up:
+
+```bash
+docker compose ps worker
+docker compose logs -f worker
+```
+
+A healthy worker logs `worker starting on queues: documents, bulk`. If it logs
+`JOB_QUEUE_URL is not set` the queue is off and the API falls back to
+extracting inline — the product still works, it is just back to holding a
+request thread for the duration.
+
+**Two queues.** `documents` is drained before `bulk`, so a single invoice
+uploaded behind a sixty-page statement is still answered in seconds.
+Statements and multi-page uploads go to `bulk`. On a bigger box you can run a
+second worker pinned to one queue:
+
+```bash
+docker compose run -d --name worker-bulk worker python worker.py bulk
+```
+
+**The uploads volume is shared on purpose.** The queue carries an extraction
+id, not the document, and the worker reads the pages off the same disk the API
+wrote them to. Remove that mount and every job fails with "the uploaded file
+could not be read back from storage".
+
+**Redis is now durable.** It used to be ephemeral because it only held
+rate-limit counters. It now also holds the job queue, so the compose file
+enables append-only persistence with a `redisdata` volume. Anything that still
+slips through leaves a row in `processing`, which the sweeper fails on the
+next history read or worker restart rather than leaving it claiming to be busy
+for ever.
+
+**A stuck upload** is a row showing "processing" long after it should have
+finished. Check `docker compose logs worker` first; the sweeper will fail it
+automatically once no live job could still exist, and the customer sees a
+message telling them to upload it again rather than a silent dead end.
+
+---
+
 ## Notes / sizing
 
 - **Memory budget:** Postgres (~150 MB) + nginx (~30 MB) + Redis (~5–10 MB) +

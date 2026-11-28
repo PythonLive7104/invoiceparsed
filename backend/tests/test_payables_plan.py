@@ -197,7 +197,8 @@ INVOICE = {
 def _upload(client, app, monkeypatch, headers):
     import routes.extract_routes as er
 
-    monkeypatch.setattr(er, "extract_document",
+    monkeypatch.setattr(
+        "openai_service.extract_document",
                         lambda pages, doc_type="invoice": normalize(INVOICE))
     response = client.post(
         "/api/extract",

@@ -51,7 +51,7 @@ def account(app):
 def _upload(client, app, monkeypatch, headers, payload=None, content=b"x"):
     import routes.extract_routes as er
     monkeypatch.setattr(
-        er, "extract_document",
+        "openai_service.extract_document",
         lambda pages, doc_type="invoice": payload or _invoice(),
     )
     r = client.post(
@@ -146,7 +146,8 @@ def test_receipts_do_not_create_suppliers(client, app, monkeypatch, account):
     not a supplier relationship."""
     _user, headers = account
     import routes.extract_routes as er
-    monkeypatch.setattr(er, "extract_document",
+    monkeypatch.setattr(
+        "openai_service.extract_document",
                         lambda pages, doc_type="invoice": _invoice())
     client.post(
         "/api/extract",

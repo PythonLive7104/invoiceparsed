@@ -30,7 +30,7 @@ def two_tenants(app, monkeypatch):
     import routes.extract_routes as er
     from invoice_schema import normalize
     monkeypatch.setattr(
-        er, "extract_document", lambda pages, doc_type="invoice": normalize(FAKE_INVOICE)
+        "openai_service.extract_document", lambda pages, doc_type="invoice": normalize(FAKE_INVOICE)
     )
     alice = make_user(app, email="alice@example.com", plan="pro")
     bob = make_user(app, email="bob@example.com", plan="pro")

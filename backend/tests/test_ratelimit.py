@@ -80,7 +80,8 @@ def test_demo_endpoint_rate_limited(tmp_path, monkeypatch):
 
 def _stub_extract(monkeypatch):
     import routes.extract_routes as er
-    monkeypatch.setattr(er, "extract_document", lambda pages, doc_type="invoice": {
+    monkeypatch.setattr(
+        "openai_service.extract_document", lambda pages, doc_type="invoice": {
         "vendor": {"name": "Acme", "address": None, "email": None},
         "invoice_number": "INV-1", "invoice_date": None, "due_date": None,
         "currency": "USD", "payment_terms": None, "line_items": [],

@@ -68,6 +68,45 @@ def save_files(eid: str, pages: list[dict]) -> None:
             fh.write(p["bytes"])
 
 
+def load_pages(eid: str) -> list[dict]:
+    """Read an extraction's saved originals back as extractor input.
+
+    The reason a background worker is possible at all: the uploaded bytes are
+    already on disk before extraction starts, so the job carries an id rather
+    than ten megabytes of PDF through the queue. A queue is a message bus, not
+    a file store, and putting documents in it would make Redis the most
+    fragile part of the system.
+
+    Returns pages in upload order, which matters: page order is part of the
+    document, and `duplicates.file_hash` is order-sensitive.
+    """
+    directory = extraction_dir(eid)
+    if not os.path.isdir(directory):
+        return []
+    found = []
+    for name in os.listdir(directory):
+        index, sep, original = name.partition("__")
+        if not sep or not index.isdigit():
+            continue
+        path = os.path.join(directory, name)
+        try:
+            with open(path, "rb") as handle:
+                data = handle.read()
+        except OSError:
+            continue
+        found.append({
+            "index": int(index),
+            "name": original,
+            "mime": mimetypes.guess_type(original)[0] or "application/octet-stream",
+            "bytes": data,
+        })
+    found.sort(key=lambda page: page["index"])
+    return [
+        {"bytes": page["bytes"], "mime": page["mime"], "name": page["name"]}
+        for page in found
+    ]
+
+
 def list_files(eid: str) -> list[dict]:
     d = extraction_dir(eid)
     if not os.path.isdir(d):
